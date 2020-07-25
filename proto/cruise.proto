@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package cruise;
+
+// The cruise service definition.
+service Cruise {
+  rpc CreateContainer (CreateContainerRequest) returns (CreateContainerResponse) {}
+}
+
+message CreateContainerRequest {
+  string name = 1;
+  string rootfs_path = 2;
+  string command = 3;
+  repeated string args = 4;
+}
+
+message CreateContainerResponse {
+  string container_id = 1;
+}
