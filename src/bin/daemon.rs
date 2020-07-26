@@ -23,7 +23,7 @@ fn main() {
 
     if let Some(matches) = matches.subcommand_matches(RUN_SUBCMD) {
         let port = matches.value_of(PORT).unwrap();
-        daemon::new(container_manager::new())
+        daemon::new(container_manager::ContainerManager::new())
             .run_server(port)
             .expect("Cruise daemon server failed");
     }

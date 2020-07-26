@@ -49,9 +49,7 @@ impl Cruise for CruiseDaemon {
         };
 
         match self.cm.create_container(container_opts) {
-            Ok(container) => Ok(Response::new(CreateContainerResponse {
-                container_id: container.id().into(),
-            })),
+            Ok(container_id) => Ok(Response::new(CreateContainerResponse { container_id })),
             Err(err) => Err(Status::new(tonic::Code::Internal, format!("{:?}", err))),
         }
     }
