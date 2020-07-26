@@ -1,8 +1,10 @@
 use crate::container::{new as new_container, rand_id, Container, ContainerMap};
+use crate::container_store::ContainerStore;
 
 #[derive(Debug)]
 pub struct ContainerManager {
     container_map: ContainerMap,
+    container_store: ContainerStore,
 }
 
 pub struct ContainerOptions {
@@ -16,10 +18,12 @@ pub struct ContainerOptions {
 pub struct ContainerCreateError;
 
 impl ContainerManager {
-    pub fn new() -> ContainerManager {
-        ContainerManager {
+    pub fn new(root_dir: String) -> Result<ContainerManager, std::io::Error> {
+        let container_store = ContainerStore::new(root_dir)?;
+        Ok(ContainerManager {
             container_map: ContainerMap::new(),
-        }
+            container_store: container_store,
+        })
     }
 
     pub fn create_container(
