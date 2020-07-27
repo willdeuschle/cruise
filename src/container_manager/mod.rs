@@ -15,7 +15,9 @@ pub struct ContainerOptions {
 }
 
 #[derive(Debug)]
-pub struct ContainerCreateError;
+pub struct ContainerCreateError {
+    pub reason: String,
+}
 
 impl ContainerManager {
     pub fn new(root_dir: String) -> Result<ContainerManager, std::io::Error> {
@@ -44,9 +46,34 @@ impl ContainerManager {
         // directory from disk and removing the in-memory container map
         let container_id = rand_id();
         let container: Container = new_container(container_id, opts.name);
-        match self.container_map.add(container) {
-            Ok(container_id) => Ok(container_id),
-            Err(_) => Err(ContainerCreateError),
-        }
+        let container_id = match self.container_map.add(container) {
+            Ok(container_id) => container_id,
+            Err(err) => {
+                return Err(ContainerCreateError {
+                    reason: format!("{:?}", err),
+                })
+            }
+        };
+        let _container_dir = match self.container_store.create_container(&container_id) {
+            Ok(container_dir) => container_dir,
+            Err(err) => {
+                return Err(ContainerCreateError {
+                    reason: format!("{}", err),
+                });
+            }
+        };
+        // TODO: construct the runtime spec here now that we have the rootfs path
+        match self
+            .container_store
+            .create_container_bundle(&container_id, &opts.rootfs_path, b"")
+        {
+            Ok(_) => (),
+            Err(err) => {
+                return Err(ContainerCreateError {
+                    reason: format!("{}", err),
+                })
+            }
+        };
+        Ok(container_id)
     }
 }
