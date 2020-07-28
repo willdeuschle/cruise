@@ -1,10 +1,12 @@
 use crate::container::{new as new_container, rand_id, Container, ContainerMap};
+use crate::container_runtime::{ContainerRuntime, RuntimeSpecOptions};
 use crate::container_store::ContainerStore;
 
 #[derive(Debug)]
 pub struct ContainerManager {
     container_map: ContainerMap,
     container_store: ContainerStore,
+    container_runtime: ContainerRuntime,
 }
 
 pub struct ContainerOptions {
@@ -20,11 +22,12 @@ pub struct ContainerCreateError {
 }
 
 impl ContainerManager {
-    pub fn new(root_dir: String) -> Result<ContainerManager, std::io::Error> {
+    pub fn new(root_dir: String, runtime_path: String) -> Result<ContainerManager, std::io::Error> {
         let container_store = ContainerStore::new(root_dir)?;
         Ok(ContainerManager {
             container_map: ContainerMap::new(),
             container_store: container_store,
+            container_runtime: ContainerRuntime::new(runtime_path),
         })
     }
 
@@ -54,26 +57,37 @@ impl ContainerManager {
                 })
             }
         };
-        let _container_dir = match self.container_store.create_container(&container_id) {
-            Ok(container_dir) => container_dir,
+        match self.container_store.create_container(&container_id) {
+            Ok(_) => (),
             Err(err) => {
                 return Err(ContainerCreateError {
                     reason: format!("{}", err),
                 });
             }
         };
-        // TODO: construct the runtime spec here now that we have the rootfs path
-        match self
+        let container_bundle_dir = match self
             .container_store
-            .create_container_bundle(&container_id, &opts.rootfs_path, b"")
+            .create_container_bundle(&container_id, &opts.rootfs_path)
         {
-            Ok(_) => (),
+            Ok(container_bundle_dir) => container_bundle_dir,
             Err(err) => {
                 return Err(ContainerCreateError {
                     reason: format!("{}", err),
                 })
             }
         };
+        // TODO: construct the runtime spec here now that we have the container bundle
+        let opts = RuntimeSpecOptions {
+            root_path: container_bundle_dir,
+        };
+        match self.container_runtime.new_runtime_spec(&opts) {
+            Ok(()) => (),
+            Err(err) => {
+                return Err(ContainerCreateError {
+                    reason: format!("{:?}", err),
+                })
+            }
+        }
         Ok(container_id)
     }
 }

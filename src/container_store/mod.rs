@@ -1,6 +1,5 @@
-use std::fs::{copy, File};
+use std::fs::copy;
 use std::fs::{create_dir, create_dir_all, read_dir};
-use std::io::prelude::*;
 use std::io::{Error, ErrorKind};
 use std::path::Path;
 
@@ -73,7 +72,7 @@ impl ContainerStore {
     }
 
     // create_container creates the container directory on disk and returns the directory
-    pub fn create_container(self: &Self, container_id: &str) -> Result<String, Error> {
+    pub fn create_container(self: &Self, container_id: &str) -> Result<(), Error> {
         let container_dir = self.container_dir(container_id);
         if Path::new(&container_dir).exists() {
             return Err(Error::new(
@@ -82,7 +81,7 @@ impl ContainerStore {
             ));
         }
         let _ = create_dir_all(&container_dir)?;
-        Ok(container_dir)
+        Ok(())
     }
 
     // pass in a spec and a root fs path, put those in the bundle dir
@@ -90,8 +89,7 @@ impl ContainerStore {
         self: &Self,
         container_id: &str,
         rootfs: &str,
-        spec: &[u8],
-    ) -> Result<(), Error> {
+    ) -> Result<String, Error> {
         // copy the rootfs of the container
         let rootfs_dir = self.rootfs_dir(container_id);
         let _ = create_dir_all(&rootfs_dir)?;
@@ -104,11 +102,7 @@ impl ContainerStore {
                 ));
             }
         }
-        // write the spec to disk
-        let spec_file_path = self.runtime_spec_file(container_id);
-        let mut spec_file = File::create(spec_file_path)?;
-        spec_file.write_all(spec)?;
-        Ok(())
+        Ok(self.bundle_dir(container_id))
     }
 
     fn container_dir(self: &Self, container_id: &str) -> String {
@@ -121,9 +115,5 @@ impl ContainerStore {
 
     fn rootfs_dir(self: &Self, container_id: &str) -> String {
         format!("{}/rootfs", self.bundle_dir(container_id))
-    }
-
-    fn runtime_spec_file(self: &Self, container_id: &str) -> String {
-        format!("{}/config.json", self.bundle_dir(container_id))
     }
 }
