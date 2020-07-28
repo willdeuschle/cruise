@@ -78,6 +78,8 @@ impl ContainerManager {
         };
         // TODO: construct the runtime spec here now that we have the container bundle
         let opts = RuntimeSpecOptions {
+            command: opts.command,
+            args: opts.args,
             root_path: container_bundle_dir,
         };
         match self.container_runtime.new_runtime_spec(&opts) {
