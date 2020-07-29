@@ -1,3 +1,4 @@
+use crate::container::Container;
 use std::fs::copy;
 use std::fs::{create_dir, create_dir_all, read_dir};
 use std::io::{Error, ErrorKind};
@@ -103,6 +104,16 @@ impl ContainerStore {
             }
         }
         Ok(self.bundle_dir(container_id))
+    }
+
+    // persist container state to disk
+    pub fn persist_container_state(self: &Self, container: &Container) -> Result<(), Error> {
+        let _ = self.container_state_file(container.id());
+        Ok(())
+    }
+
+    fn container_state_file(self: &Self, container_id: &str) -> String {
+        format!("{}/container.state", self.container_dir(container_id))
     }
 
     fn container_dir(self: &Self, container_id: &str) -> String {

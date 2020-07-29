@@ -6,9 +6,39 @@ pub struct ContainerRuntime {
 }
 
 pub struct RuntimeSpecOptions {
+    pub bundle_path: String,
     pub command: String,
     pub args: Vec<String>,
-    pub root_path: String,
+}
+
+impl RuntimeSpecOptions {
+    pub fn new(bundle_path: String, command: String, args: Vec<String>) -> RuntimeSpecOptions {
+        RuntimeSpecOptions {
+            bundle_path,
+            command,
+            args,
+        }
+    }
+}
+
+pub struct RuntimeCreateOptions {
+    pub bundle_path: String,
+    pub container_pidfile: String,
+    pub container_id: String,
+}
+
+impl RuntimeCreateOptions {
+    pub fn new(
+        bundle_path: String,
+        container_pidfile: String,
+        container_id: String,
+    ) -> RuntimeCreateOptions {
+        RuntimeCreateOptions {
+            bundle_path,
+            container_pidfile,
+            container_id,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -27,7 +57,7 @@ impl ContainerRuntime {
     ) -> Result<(), ContainerRuntimeError> {
         // generate generic spec
         let mut runc = Command::new(&self.runtime_path);
-        runc.arg("spec").arg("--bundle").arg(&opts.root_path);
+        runc.arg("spec").arg("--bundle").arg(&opts.bundle_path);
         match runc.output() {
             Ok(_) => (),
             Err(err) => {
@@ -36,7 +66,7 @@ impl ContainerRuntime {
                 })
             }
         }
-        let config_path = format!("{}/config.json", &opts.root_path);
+        let config_path = format!("{}/config.json", &opts.bundle_path);
         // override `args` in spec with combination of command and args options
         let mut args = String::from(format!("\"{}\"", opts.command));
         for arg in opts.args.iter() {
@@ -66,6 +96,31 @@ impl ContainerRuntime {
             Err(err) => {
                 return Err(ContainerRuntimeError {
                     reason: format!("failed to update terminal settings with sed: {}", err),
+                })
+            }
+        }
+        Ok(())
+    }
+
+    pub fn create_container(
+        self: &Self,
+        opts: RuntimeCreateOptions,
+    ) -> Result<(), ContainerRuntimeError> {
+        // command to execute: runc create --bundle bundle --pid-file container_pidfile container_id
+        let mut runc_create = Command::new(&self.runtime_path);
+        runc_create
+            .arg("create")
+            .arg("--bundle")
+            .arg(&opts.bundle_path)
+            .arg("--pid-file")
+            .arg(format!("{}/{}", &opts.bundle_path, &opts.container_pidfile))
+            .arg(opts.container_id);
+        match runc_create.spawn() {
+            // printing this for now so that we can see the result of the execution
+            Ok(out) => println!("out: {:?}", out),
+            Err(err) => {
+                return Err(ContainerRuntimeError {
+                    reason: format!("failed to spawn `runc create`: {}", err),
                 })
             }
         }
