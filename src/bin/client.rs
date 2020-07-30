@@ -14,6 +14,7 @@ const CONTAINER_DELETE: &str = "delete";
 
 const CONTAINER_ROOTFS_PATH: &str = "rootfs";
 const CONTAINER_NAME: &str = "CONTAINER_NAME";
+const CONTAINER_ID: &str = "CONTAINER_ID";
 const CONTAINER_CMD: &str = "CONTAINER_CMD";
 const CONTAINER_ARGS: &str = "CONTAINER_ARGS";
 
@@ -60,7 +61,16 @@ fn main() {
                                 .multiple(true),
                         ),
                 )
-                .subcommand(SubCommand::with_name(CONTAINER_START).about("starts container"))
+                .subcommand(
+                    SubCommand::with_name(CONTAINER_START)
+                        .about("starts container")
+                        .arg(
+                            Arg::with_name(CONTAINER_ID)
+                                .help("container id")
+                                .required(true)
+                                .index(1),
+                        ),
+                )
                 .subcommand(SubCommand::with_name(CONTAINER_STOP).about("stops container"))
                 .subcommand(SubCommand::with_name(CONTAINER_GET).about("gets container"))
                 .subcommand(SubCommand::with_name(CONTAINER_LIST).about("lists container"))
@@ -71,7 +81,6 @@ fn main() {
     if let Some(matches) = matches.subcommand_matches(CONTAINER_SUBCMD) {
         let port = matches.value_of(PORT).unwrap();
         if let Some(matches) = matches.subcommand_matches(CONTAINER_CREATE) {
-            println!("IMPLEMENTATION IN PROGRESS: container create {:?}", matches);
             let container_name = matches.value_of(CONTAINER_NAME).unwrap();
             let container_cmd = matches.value_of(CONTAINER_CMD).unwrap();
             let container_rootfs_path = matches.value_of(CONTAINER_ROOTFS_PATH).unwrap();
@@ -90,7 +99,8 @@ fn main() {
             .expect("create container failed");
         }
         if let Some(matches) = matches.subcommand_matches(CONTAINER_START) {
-            println!("NOT IMPLEMENTED: container start {:?}", matches)
+            let container_id = matches.value_of(CONTAINER_ID).unwrap();
+            client::start_container(port, container_id.into()).expect("start container failed");
         }
         if let Some(matches) = matches.subcommand_matches(CONTAINER_STOP) {
             println!("NOT IMPLEMENTED: container stop {:?}", matches)

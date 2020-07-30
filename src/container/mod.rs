@@ -31,7 +31,7 @@ pub fn new(id: &ID, name: String) -> Container {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub enum Status {
     Initialized,
     Created,
@@ -95,7 +95,10 @@ impl ContainerMap {
         }
         let container = map.get_mut(container_id).unwrap();
         container.status = status;
-        container.created_at = Some(created_at);
+        // TODO: this could be more elegant
+        if created_at != SystemTime::UNIX_EPOCH {
+            container.created_at = Some(created_at);
+        }
         Ok(())
     }
 

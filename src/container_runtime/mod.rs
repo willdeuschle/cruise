@@ -1,3 +1,4 @@
+use crate::container::ID;
 use std::process::Command;
 
 #[derive(Debug)]
@@ -117,10 +118,27 @@ impl ContainerRuntime {
             .arg(opts.container_id);
         match runc_create.spawn() {
             // printing this for now so that we can see the result of the execution
+            // TODO: clean this up (debug logging?)
             Ok(out) => println!("out: {:?}", out),
             Err(err) => {
                 return Err(ContainerRuntimeError {
                     reason: format!("failed to spawn `runc create`: {}", err),
+                })
+            }
+        }
+        Ok(())
+    }
+
+    pub fn start_container(self: &Self, container_id: &ID) -> Result<(), ContainerRuntimeError> {
+        let mut runc_start = Command::new(&self.runtime_path);
+        runc_start.arg("start").arg(format!("{}", container_id));
+        match runc_start.spawn() {
+            // printing this for now so that we can see the result of the execution
+            // TODO: clean this up (debug logging?)
+            Ok(out) => println!("out: {:?}", out),
+            Err(err) => {
+                return Err(ContainerRuntimeError {
+                    reason: format!("failed to spawn `runc start {}`: {}", container_id, err),
                 })
             }
         }

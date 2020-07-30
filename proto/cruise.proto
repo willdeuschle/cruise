@@ -5,6 +5,7 @@ package cruise;
 // The cruise service definition.
 service Cruise {
   rpc CreateContainer (CreateContainerRequest) returns (CreateContainerResponse) {}
+  rpc StartContainer (StartContainerRequest) returns (StartContainerResponse) {}
 }
 
 message CreateContainerRequest {
@@ -16,4 +17,12 @@ message CreateContainerRequest {
 
 message CreateContainerResponse {
   string container_id = 1;
+}
+
+message StartContainerRequest {
+  string container_id = 1;
+}
+
+message StartContainerResponse {
+  bool success = 1;
 }

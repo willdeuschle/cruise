@@ -18,14 +18,14 @@ pub struct ContainerOptions {
 }
 
 #[derive(Debug)]
-pub struct ContainerCreateError {
+pub struct ContainerManagerError {
     container_id: ID,
     pub reason: String,
 }
 
-impl ContainerCreateError {
-    fn new(container_id: &ID, reason: String) -> ContainerCreateError {
-        ContainerCreateError {
+impl ContainerManagerError {
+    fn new(container_id: &ID, reason: String) -> ContainerManagerError {
+        ContainerManagerError {
             container_id: container_id.clone(),
             reason,
         }
@@ -54,7 +54,7 @@ impl ContainerManager {
     pub fn create_container(
         self: &Self,
         opts: ContainerOptions,
-    ) -> Result<String, ContainerCreateError> {
+    ) -> Result<String, ContainerManagerError> {
         match self.create_container_helper(opts) {
             Ok(container_id) => Ok(container_id),
             Err(err) => {
@@ -77,7 +77,7 @@ impl ContainerManager {
     pub fn create_container_helper(
         self: &Self,
         opts: ContainerOptions,
-    ) -> Result<String, ContainerCreateError> {
+    ) -> Result<String, ContainerManagerError> {
         // generate container id
         let container_id = rand_id();
         // create & store in-memory container structure
@@ -85,7 +85,7 @@ impl ContainerManager {
         let container_id = match self.container_map.add(container) {
             Ok(container_id) => container_id,
             Err(err) => {
-                return Err(ContainerCreateError::new(
+                return Err(ContainerManagerError::new(
                     &container_id,
                     format!("{:?}", err),
                 ))
@@ -95,7 +95,7 @@ impl ContainerManager {
         match self.container_store.create_container(&container_id) {
             Ok(_) => (),
             Err(err) => {
-                return Err(ContainerCreateError::new(
+                return Err(ContainerManagerError::new(
                     &container_id,
                     format!("{:?}", err),
                 ))
@@ -108,7 +108,7 @@ impl ContainerManager {
         {
             Ok(container_bundle_dir) => container_bundle_dir,
             Err(err) => {
-                return Err(ContainerCreateError::new(
+                return Err(ContainerManagerError::new(
                     &container_id,
                     format!("{:?}", err),
                 ))
@@ -120,7 +120,7 @@ impl ContainerManager {
         match self.container_runtime.new_runtime_spec(&spec_opts) {
             Ok(()) => (),
             Err(err) => {
-                return Err(ContainerCreateError::new(
+                return Err(ContainerManagerError::new(
                     &container_id,
                     format!("{:?}", err),
                 ))
@@ -135,20 +135,63 @@ impl ContainerManager {
         match self.container_runtime.create_container(create_opts) {
             Ok(()) => (),
             Err(err) => {
-                return Err(ContainerCreateError::new(
+                return Err(ContainerManagerError::new(
                     &container_id,
                     format!("{:?}", err),
                 ))
             }
         }
-        // update container status and creation time
-        match self
-            .container_map
-            .update(&container_id, Status::Created, SystemTime::now())
-        {
+        // update container status and persist to disk
+        match self.update_and_persist_status(&container_id, Status::Created, SystemTime::now()) {
+            Ok(_) => Ok(container_id),
+            Err(err) => Err(err),
+        }
+    }
+
+    pub fn start_container(self: &Self, container_id: &ID) -> Result<(), ContainerManagerError> {
+        // ensure container exists and is in created state
+        match self.container_map.get(container_id) {
+            Ok(container) => {
+                if container.status != Status::Created {
+                    return Err(ContainerManagerError::new(
+                        &container_id,
+                        format!("container does not have `Created` status"),
+                    ));
+                }
+            }
+            Err(err) => {
+                return Err(ContainerManagerError::new(
+                    container_id,
+                    format!("{:?}", err),
+                ))
+            }
+        }
+        // container start
+        match self.container_runtime.start_container(container_id) {
             Ok(_) => (),
             Err(err) => {
-                return Err(ContainerCreateError::new(
+                return Err(ContainerManagerError::new(
+                    &container_id,
+                    format!("{:?}", err),
+                ))
+            }
+        }
+        // update container status and persist to disk
+        self.update_and_persist_status(&container_id, Status::Running, SystemTime::UNIX_EPOCH)
+    }
+
+    /// update_and_persist_status updates container status and persist to disk
+    fn update_and_persist_status(
+        self: &Self,
+        container_id: &ID,
+        status: Status,
+        created_at: SystemTime,
+    ) -> Result<(), ContainerManagerError> {
+        // update container status
+        match self.container_map.update(container_id, status, created_at) {
+            Ok(_) => (),
+            Err(err) => {
+                return Err(ContainerManagerError::new(
                     &container_id,
                     format!("{:?}", err),
                 ))
@@ -158,21 +201,20 @@ impl ContainerManager {
         let container = match self.container_map.get(&container_id) {
             Ok(container) => container,
             Err(err) => {
-                return Err(ContainerCreateError::new(
+                return Err(ContainerManagerError::new(
                     &container_id,
                     format!("{:?}", err),
                 ))
             }
         };
         match self.container_store.persist_container_state(&container) {
-            Ok(_) => (),
+            Ok(_) => Ok(()),
             Err(err) => {
-                return Err(ContainerCreateError::new(
+                return Err(ContainerManagerError::new(
                     &container_id,
                     format!("{:?}", err),
                 ))
             }
         }
-        Ok(container_id)
     }
 }

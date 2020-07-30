@@ -3,7 +3,9 @@ use tonic::{transport::Server, Request, Response, Status};
 use crate::container_manager::{ContainerManager, ContainerOptions};
 
 use cruise_grpc::cruise_server::{Cruise, CruiseServer};
-use cruise_grpc::{CreateContainerRequest, CreateContainerResponse};
+use cruise_grpc::{
+    CreateContainerRequest, CreateContainerResponse, StartContainerRequest, StartContainerResponse,
+};
 
 mod cruise_grpc {
     tonic::include_proto!("cruise"); // The string specified here must match the proto package name
@@ -50,6 +52,20 @@ impl Cruise for CruiseDaemon {
 
         match self.cm.create_container(container_opts) {
             Ok(container_id) => Ok(Response::new(CreateContainerResponse { container_id })),
+            Err(err) => Err(Status::new(tonic::Code::Internal, format!("{:?}", err))),
+        }
+    }
+
+    async fn start_container(
+        &self,
+        request: Request<StartContainerRequest>,
+    ) -> Result<Response<StartContainerResponse>, Status> {
+        println!("Got a request: {:?}", request);
+
+        let request = request.into_inner();
+
+        match self.cm.start_container(&request.container_id) {
+            Ok(_) => Ok(Response::new(StartContainerResponse { success: true })),
             Err(err) => Err(Status::new(tonic::Code::Internal, format!("{:?}", err))),
         }
     }
