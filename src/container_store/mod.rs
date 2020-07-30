@@ -1,6 +1,6 @@
-use crate::container::Container;
-use std::fs::copy;
-use std::fs::{create_dir, create_dir_all, read_dir};
+use crate::container::{Container, ID};
+use std::fs::{copy, write};
+use std::fs::{create_dir, create_dir_all, read_dir, remove_dir_all};
 use std::io::{Error, ErrorKind};
 use std::path::Path;
 
@@ -73,7 +73,7 @@ impl ContainerStore {
     }
 
     // create_container creates the container directory on disk and returns the directory
-    pub fn create_container(self: &Self, container_id: &str) -> Result<(), Error> {
+    pub fn create_container(self: &Self, container_id: &ID) -> Result<(), Error> {
         let container_dir = self.container_dir(container_id);
         if Path::new(&container_dir).exists() {
             return Err(Error::new(
@@ -85,10 +85,15 @@ impl ContainerStore {
         Ok(())
     }
 
+    pub fn remove_container(self: &Self, container_id: &ID) {
+        let container_dir = self.container_dir(container_id);
+        let _ = remove_dir_all(&container_dir);
+    }
+
     // pass in a spec and a root fs path, put those in the bundle dir
     pub fn create_container_bundle(
         self: &Self,
-        container_id: &str,
+        container_id: &ID,
         rootfs: &str,
     ) -> Result<String, Error> {
         // copy the rootfs of the container
@@ -106,25 +111,28 @@ impl ContainerStore {
         Ok(self.bundle_dir(container_id))
     }
 
-    // persist container state to disk
     pub fn persist_container_state(self: &Self, container: &Container) -> Result<(), Error> {
-        let _ = self.container_state_file(container.id());
+        let serialized_container = serde_json::to_string(&container)?;
+        write(
+            self.container_state_file(container.id()),
+            serialized_container,
+        )?;
         Ok(())
     }
 
-    fn container_state_file(self: &Self, container_id: &str) -> String {
+    fn container_state_file(self: &Self, container_id: &ID) -> String {
         format!("{}/container.state", self.container_dir(container_id))
     }
 
-    fn container_dir(self: &Self, container_id: &str) -> String {
+    fn container_dir(self: &Self, container_id: &ID) -> String {
         format!("{}/containers/{}", self.root_dir, container_id)
     }
 
-    fn bundle_dir(self: &Self, container_id: &str) -> String {
+    fn bundle_dir(self: &Self, container_id: &ID) -> String {
         format!("{}/bundle", self.container_dir(container_id))
     }
 
-    fn rootfs_dir(self: &Self, container_id: &str) -> String {
+    fn rootfs_dir(self: &Self, container_id: &ID) -> String {
         format!("{}/rootfs", self.bundle_dir(container_id))
     }
 }

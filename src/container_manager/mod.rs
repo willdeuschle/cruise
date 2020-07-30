@@ -1,4 +1,4 @@
-use crate::container::{new as new_container, rand_id, Container, ContainerMap, Status};
+use crate::container::{new as new_container, rand_id, Container, ContainerMap, Status, ID};
 use crate::container_runtime::{ContainerRuntime, RuntimeCreateOptions, RuntimeSpecOptions};
 use crate::container_store::ContainerStore;
 use std::time::SystemTime;
@@ -19,7 +19,17 @@ pub struct ContainerOptions {
 
 #[derive(Debug)]
 pub struct ContainerCreateError {
+    container_id: ID,
     pub reason: String,
+}
+
+impl ContainerCreateError {
+    fn new(container_id: &ID, reason: String) -> ContainerCreateError {
+        ContainerCreateError {
+            container_id: container_id.clone(),
+            reason,
+        }
+    }
 }
 
 impl ContainerManager {
@@ -32,44 +42,63 @@ impl ContainerManager {
         })
     }
 
+    fn rollback_container_create(self: &Self, container_id: &ID) {
+        self.container_map.remove(&container_id);
+        self.container_store.remove_container(&container_id)
+    }
+
+    /// create_container does the following:
+    /// - invoke create_container_helper to create the container
+    /// - on an error, invoke rollback_container_create to clean up leftover
+    ///   state, including in-memory container and container directory on disk
     pub fn create_container(
         self: &Self,
         opts: ContainerOptions,
     ) -> Result<String, ContainerCreateError> {
-        // container manager creates TODOs:
-        // - generate container id [DONE]
-        // - create the in-memory container structure [DONE]
-        // - store the in-memory container structure [DONE]
-        // - create the container directory [DONE]
-        // - create the runc spec for the container [DONE]
-        // - create the container bundle: copy the rootfs in as well as the spec into the bundle
-        // dir of the container [DONE]
-        // - create the container (runc/or shim exec). on success, update the container status to
-        // created, update the created timestamp, and write the updates to disk
-        // on any failure in any of these steps - rollback. this means removing the container
-        // directory from disk and removing the in-memory container map
+        match self.create_container_helper(opts) {
+            Ok(container_id) => Ok(container_id),
+            Err(err) => {
+                // best effort rollback
+                self.rollback_container_create(&err.container_id);
+                Err(err)
+            }
+        }
+    }
 
+    /// create_container_helper does the following:
+    /// - generate container id
+    /// - create and store the in-memory container structure
+    /// - create the container directory on disk
+    /// - create the container bundle:
+    ///     - copy the rootfs into the container bundle
+    ///     - generate the runc spec for the container
+    /// - create the container (runc exec)
+    /// - update container status, write those to disk
+    pub fn create_container_helper(
+        self: &Self,
+        opts: ContainerOptions,
+    ) -> Result<String, ContainerCreateError> {
         // generate container id
         let container_id = rand_id();
-
         // create & store in-memory container structure
-        let container: Container = new_container(container_id, opts.name);
+        let container: Container = new_container(&container_id, opts.name);
         let container_id = match self.container_map.add(container) {
             Ok(container_id) => container_id,
             Err(err) => {
-                return Err(ContainerCreateError {
-                    reason: format!("{:?}", err),
-                })
+                return Err(ContainerCreateError::new(
+                    &container_id,
+                    format!("{:?}", err),
+                ))
             }
         };
-
         // create container directory on disk
         match self.container_store.create_container(&container_id) {
             Ok(_) => (),
             Err(err) => {
-                return Err(ContainerCreateError {
-                    reason: format!("{}", err),
-                });
+                return Err(ContainerCreateError::new(
+                    &container_id,
+                    format!("{:?}", err),
+                ))
             }
         };
         // create container bundle on disk
@@ -79,9 +108,10 @@ impl ContainerManager {
         {
             Ok(container_bundle_dir) => container_bundle_dir,
             Err(err) => {
-                return Err(ContainerCreateError {
-                    reason: format!("{}", err),
-                })
+                return Err(ContainerCreateError::new(
+                    &container_id,
+                    format!("{:?}", err),
+                ))
             }
         };
         // create container runtime spec on disk
@@ -90,9 +120,10 @@ impl ContainerManager {
         match self.container_runtime.new_runtime_spec(&spec_opts) {
             Ok(()) => (),
             Err(err) => {
-                return Err(ContainerCreateError {
-                    reason: format!("{:?}", err),
-                })
+                return Err(ContainerCreateError::new(
+                    &container_id,
+                    format!("{:?}", err),
+                ))
             }
         }
         // create container
@@ -104,9 +135,10 @@ impl ContainerManager {
         match self.container_runtime.create_container(create_opts) {
             Ok(()) => (),
             Err(err) => {
-                return Err(ContainerCreateError {
-                    reason: format!("{:?}", err),
-                })
+                return Err(ContainerCreateError::new(
+                    &container_id,
+                    format!("{:?}", err),
+                ))
             }
         }
         // update container status and creation time
@@ -116,26 +148,29 @@ impl ContainerManager {
         {
             Ok(_) => (),
             Err(err) => {
-                return Err(ContainerCreateError {
-                    reason: format!("{:?}", err),
-                })
+                return Err(ContainerCreateError::new(
+                    &container_id,
+                    format!("{:?}", err),
+                ))
             }
         }
-        // TODO: persist container state to disk
+        // persist container state to disk
         let container = match self.container_map.get(&container_id) {
             Ok(container) => container,
             Err(err) => {
-                return Err(ContainerCreateError {
-                    reason: format!("{:?}", err),
-                })
+                return Err(ContainerCreateError::new(
+                    &container_id,
+                    format!("{:?}", err),
+                ))
             }
         };
         match self.container_store.persist_container_state(&container) {
             Ok(_) => (),
             Err(err) => {
-                return Err(ContainerCreateError {
-                    reason: format!("{:?}", err),
-                })
+                return Err(ContainerCreateError::new(
+                    &container_id,
+                    format!("{:?}", err),
+                ))
             }
         }
         Ok(container_id)

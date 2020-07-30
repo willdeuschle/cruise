@@ -1,10 +1,11 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Mutex;
 use std::time::SystemTime;
 use uuid::Uuid;
 
-#[derive(Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Container {
     pub id: ID,
     pub name: String,
@@ -20,9 +21,9 @@ impl Container {
     }
 }
 
-pub fn new(id: ID, name: String) -> Container {
+pub fn new(id: &ID, name: String) -> Container {
     Container {
-        id,
+        id: id.clone(),
         name,
         status: Status::Initialized,
         exit_code: -1,
@@ -30,7 +31,7 @@ pub fn new(id: ID, name: String) -> Container {
     }
 }
 
-#[derive(Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub enum Status {
     Initialized,
     Created,
@@ -107,5 +108,13 @@ impl ContainerMap {
         }
         let container_clone = map.get(container_id).unwrap().clone();
         Ok(Box::new(container_clone))
+    }
+
+    pub fn remove(self: &Self, container_id: &ID) {
+        let mut map = self.map.lock().unwrap();
+        if !map.contains_key(container_id) {
+            return;
+        }
+        map.remove(container_id);
     }
 }
