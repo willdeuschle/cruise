@@ -35,11 +35,62 @@ impl ContainerManagerError {
 impl ContainerManager {
     pub fn new(root_dir: String, runtime_path: String) -> Result<ContainerManager, std::io::Error> {
         let container_store = ContainerStore::new(root_dir)?;
-        Ok(ContainerManager {
+        let container_manager = ContainerManager {
             container_map: ContainerMap::new(),
             container_store,
             container_runtime: ContainerRuntime::new(runtime_path),
-        })
+        };
+        match container_manager.reload() {
+            Ok(_) => Ok(container_manager),
+            Err(err) => Err(err),
+        }
+    }
+
+    /// reload does the following:
+    /// - reads all container state files off disk
+    ///     - if any of these state files fail to be parsed, we assume the
+    ///       container is corrupted and remove it
+    /// - adds the container to the in-memory store
+    /// - syncs the container state with the container runtime (runc)
+    fn reload(self: &Self) -> Result<(), std::io::Error> {
+        let container_ids = self.container_store.list_container_ids()?;
+        for container_id in container_ids {
+            let container = match self.container_store.read_container_state(&container_id) {
+                Ok(container) => container,
+                Err(err) => {
+                    // TODO: error logging
+                    eprintln!(
+                        "unable to parse state of container `{}`, err: `{}`. Removing container.",
+                        container_id, err
+                    );
+                    self.container_store.remove_container(&container_id);
+                    continue;
+                }
+            };
+            match self.container_map.add(container) {
+                Ok(_) => (),
+                Err(err) => {
+                    // TODO: error logging
+                    eprintln!(
+                        "unable to add container to in-memory state, err: `{:?}`. Continuing.",
+                        err
+                    );
+                    continue;
+                }
+            }
+            match self.sync_container_status_with_runtime(&container_id) {
+                Ok(_) => (),
+                Err(err) => {
+                    eprintln!(
+                        "unable to sync state of container `{}`, err: `{:?}`. Removing container.",
+                        container_id, err
+                    );
+                    self.container_store.remove_container(&container_id);
+                    continue;
+                }
+            }
+        }
+        Ok(())
     }
 
     fn rollback_container_create(self: &Self, container_id: &ID) {
@@ -141,8 +192,10 @@ impl ContainerManager {
                 ))
             }
         }
-        // update container status and persist to disk
-        match self.update_and_persist_status(&container_id, Status::Created, SystemTime::now()) {
+        // update container creation time, status, and persist to disk
+        self.update_container_created_at(&container_id, SystemTime::now())?;
+        self.update_container_status(&container_id, Status::Created)?;
+        match self.persist_container_state(&container_id) {
             Ok(_) => Ok(container_id),
             Err(err) => Err(err),
         }
@@ -177,19 +230,36 @@ impl ContainerManager {
             }
         }
         // update container status and persist to disk
-        self.update_and_persist_status(&container_id, Status::Running, SystemTime::UNIX_EPOCH)
+        self.update_container_status(&container_id, Status::Running)?;
+        self.persist_container_state(&container_id)
     }
 
-    /// update_and_persist_status updates container status and persist to disk
-    fn update_and_persist_status(
+    fn sync_container_status_with_runtime(
+        self: &Self,
+        container_id: &ID,
+    ) -> Result<(), ContainerManagerError> {
+        let status = match self.container_runtime.get_container_status(container_id) {
+            Ok(status) => status,
+            Err(err) => {
+                return Err(ContainerManagerError::new(
+                    container_id,
+                    format!("{:?}", err),
+                ))
+            }
+        };
+        // update container status and persist to disk
+        self.update_container_status(&container_id, status)?;
+        self.persist_container_state(&container_id)
+    }
+
+    /// update_container_status updates container status in memory
+    fn update_container_status(
         self: &Self,
         container_id: &ID,
         status: Status,
-        created_at: SystemTime,
     ) -> Result<(), ContainerManagerError> {
-        // update container status
-        match self.container_map.update(container_id, status, created_at) {
-            Ok(_) => (),
+        match self.container_map.update_status(container_id, status) {
+            Ok(_) => Ok(()),
             Err(err) => {
                 return Err(ContainerManagerError::new(
                     &container_id,
@@ -197,7 +267,33 @@ impl ContainerManager {
                 ))
             }
         }
-        // persist container state to disk
+    }
+
+    /// update_container_created_at updates container creation time in memory
+    fn update_container_created_at(
+        self: &Self,
+        container_id: &ID,
+        created_at: SystemTime,
+    ) -> Result<(), ContainerManagerError> {
+        match self
+            .container_map
+            .update_creation_time(container_id, created_at)
+        {
+            Ok(_) => Ok(()),
+            Err(err) => {
+                return Err(ContainerManagerError::new(
+                    &container_id,
+                    format!("{:?}", err),
+                ))
+            }
+        }
+    }
+
+    /// persist_container_state persists container state to disk
+    fn persist_container_state(
+        self: &Self,
+        container_id: &ID,
+    ) -> Result<(), ContainerManagerError> {
         let container = match self.container_map.get(&container_id) {
             Ok(container) => container,
             Err(err) => {

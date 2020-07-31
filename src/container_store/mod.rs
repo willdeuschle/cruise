@@ -1,6 +1,5 @@
 use crate::container::{Container, ID};
-use std::fs::{copy, write};
-use std::fs::{create_dir, create_dir_all, read_dir, remove_dir_all};
+use std::fs::{copy, create_dir, create_dir_all, read_dir, read_to_string, remove_dir_all, write};
 use std::io::{Error, ErrorKind};
 use std::path::Path;
 
@@ -74,7 +73,7 @@ impl ContainerStore {
 
     // create_container creates the container directory on disk and returns the directory
     pub fn create_container(self: &Self, container_id: &ID) -> Result<(), Error> {
-        let container_dir = self.container_dir(container_id);
+        let container_dir = self.specific_container_dir(container_id);
         if Path::new(&container_dir).exists() {
             return Err(Error::new(
                 ErrorKind::AlreadyExists,
@@ -86,7 +85,7 @@ impl ContainerStore {
     }
 
     pub fn remove_container(self: &Self, container_id: &ID) {
-        let container_dir = self.container_dir(container_id);
+        let container_dir = self.specific_container_dir(container_id);
         let _ = remove_dir_all(&container_dir);
     }
 
@@ -120,16 +119,48 @@ impl ContainerStore {
         Ok(())
     }
 
-    fn container_state_file(self: &Self, container_id: &ID) -> String {
-        format!("{}/container.state", self.container_dir(container_id))
+    pub fn read_container_state(self: &Self, container_id: &ID) -> Result<Container, Error> {
+        let container_state_file = self.container_state_file(container_id);
+        let container_state_string = read_to_string(container_state_file)?;
+        let container = serde_json::from_str(&container_state_string)?;
+        Ok(container)
     }
 
-    fn container_dir(self: &Self, container_id: &ID) -> String {
-        format!("{}/containers/{}", self.root_dir, container_id)
+    pub fn list_container_ids(self: &Self) -> Result<Vec<ID>, Error> {
+        let mut container_ids = vec![];
+        for container_dir in read_dir(self.container_dir())? {
+            let container_dir = container_dir?.path();
+            let container_id = match container_dir.components().last() {
+                Some(container_id) => container_id,
+                None => {
+                    return Err(Error::new(
+                        ErrorKind::NotFound,
+                        format!("last component not found in path: {:?}", container_dir),
+                    ))
+                }
+            };
+            container_ids.push(container_id.as_os_str().to_string_lossy().to_string())
+        }
+        Ok(container_ids)
+    }
+
+    fn container_state_file(self: &Self, container_id: &ID) -> String {
+        format!(
+            "{}/container.state",
+            self.specific_container_dir(container_id)
+        )
+    }
+
+    fn specific_container_dir(self: &Self, container_id: &ID) -> String {
+        format!("{}/{}", self.container_dir(), container_id)
+    }
+
+    fn container_dir(self: &Self) -> String {
+        format!("{}/containers", self.root_dir)
     }
 
     fn bundle_dir(self: &Self, container_id: &ID) -> String {
-        format!("{}/bundle", self.container_dir(container_id))
+        format!("{}/bundle", self.specific_container_dir(container_id))
     }
 
     fn rootfs_dir(self: &Self, container_id: &ID) -> String {

@@ -1,4 +1,4 @@
-use crate::container::ID;
+use crate::container::{RuncStatus, Status, ID};
 use std::process::Command;
 
 #[derive(Debug)]
@@ -122,7 +122,7 @@ impl ContainerRuntime {
             Ok(out) => println!("out: {:?}", out),
             Err(err) => {
                 return Err(ContainerRuntimeError {
-                    reason: format!("failed to spawn `runc create`: {}", err),
+                    reason: format!("failed to spawn `runc create`: err: `{}`", err),
                 })
             }
         }
@@ -138,10 +138,51 @@ impl ContainerRuntime {
             Ok(out) => println!("out: {:?}", out),
             Err(err) => {
                 return Err(ContainerRuntimeError {
-                    reason: format!("failed to spawn `runc start {}`: {}", container_id, err),
+                    reason: format!(
+                        "failed to spawn `runc start {}`: err: `{}`",
+                        container_id, err
+                    ),
                 })
             }
         }
         Ok(())
+    }
+
+    pub fn get_container_status(
+        self: &Self,
+        container_id: &ID,
+    ) -> Result<Status, ContainerRuntimeError> {
+        let mut runc_status_cmd = Command::new(&self.runtime_path);
+        runc_status_cmd
+            .arg("state")
+            .arg(format!("{}", container_id));
+        let status = match runc_status_cmd.output() {
+            Ok(out) => out.stdout,
+            Err(err) => {
+                return Err(ContainerRuntimeError {
+                    reason: format!(
+                        "failed to output `runc status {}`: err: `{}`",
+                        container_id, err
+                    ),
+                })
+            }
+        };
+        let runc_status_str = match String::from_utf8(status) {
+            Ok(runc_status_str) => runc_status_str,
+            Err(err) => {
+                return Err(ContainerRuntimeError {
+                    reason: format!("failed to consume runc status output: err: `{}`", err),
+                })
+            }
+        };
+        let runc_status: RuncStatus = match serde_json::from_str(&runc_status_str) {
+            Ok(status) => status,
+            Err(err) => {
+                return Err(ContainerRuntimeError {
+                    reason: format!("failed to parse runc status output: err: `{}`", err),
+                })
+            }
+        };
+        Ok(Status::from_runc_status(&runc_status))
     }
 }

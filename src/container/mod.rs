@@ -31,13 +31,32 @@ pub fn new(id: &ID, name: String) -> Container {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct RuncStatus {
+    pub status: String,
+}
+
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub enum Status {
     Initialized,
     Created,
     Running,
+    Paused,
     Stopped,
     Unknown,
+}
+
+impl Status {
+    pub fn from_runc_status(runc_status: &RuncStatus) -> Status {
+        match runc_status.status.as_str() {
+            "created" => Status::Created,
+            "running" => Status::Running,
+            "pausing" => Status::Running,
+            "paused" => Status::Paused,
+            "stopped" => Status::Stopped,
+            _ => Status::Unknown,
+        }
+    }
 }
 
 pub type ID = String;
@@ -81,11 +100,10 @@ impl ContainerMap {
         Ok(container_id)
     }
 
-    pub fn update(
+    pub fn update_status(
         self: &Self,
         container_id: &ID,
         status: Status,
-        created_at: SystemTime,
     ) -> Result<(), ContainerMapError> {
         let mut map = self.map.lock().unwrap();
         if !map.contains_key(container_id) {
@@ -95,10 +113,22 @@ impl ContainerMap {
         }
         let container = map.get_mut(container_id).unwrap();
         container.status = status;
-        // TODO: this could be more elegant
-        if created_at != SystemTime::UNIX_EPOCH {
-            container.created_at = Some(created_at);
+        Ok(())
+    }
+
+    pub fn update_creation_time(
+        self: &Self,
+        container_id: &ID,
+        created_at: SystemTime,
+    ) -> Result<(), ContainerMapError> {
+        let mut map = self.map.lock().unwrap();
+        if !map.contains_key(container_id) {
+            return Err(ContainerMapError {
+                reason: format!("container with ID `{}` does not exist", container_id),
+            });
         }
+        let container = map.get_mut(container_id).unwrap();
+        container.created_at = Some(created_at);
         Ok(())
     }
 
