@@ -1,6 +1,10 @@
 use crate::container::ID;
 use cruise_grpc::cruise_client::CruiseClient;
-use cruise_grpc::{CreateContainerRequest, StartContainerRequest};
+use cruise_grpc::{
+    CreateContainerRequest, GetContainerRequest, GetContainerResponse, ListContainersRequest,
+    StartContainerRequest,
+};
+use std::cmp::max;
 
 mod cruise_grpc {
     tonic::include_proto!("cruise");
@@ -44,4 +48,84 @@ pub async fn start_container(
     println!("RESPONSE={:?}", response);
 
     Ok(())
+}
+
+#[tokio::main]
+pub async fn get_container(port: &str, container_id: ID) -> Result<(), Box<dyn std::error::Error>> {
+    let mut client = CruiseClient::connect(format!("http://[::1]:{}", port)).await?;
+
+    let request = tonic::Request::new(GetContainerRequest { container_id });
+
+    let container = client.get_container(request).await?.into_inner();
+
+    print_containers(vec![container]);
+
+    Ok(())
+}
+
+#[tokio::main]
+pub async fn list_containers(port: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut client = CruiseClient::connect(format!("http://[::1]:{}", port)).await?;
+
+    let request = tonic::Request::new(ListContainersRequest {});
+
+    let container_list = client.list_containers(request).await?.into_inner();
+
+    print_containers(container_list.containers);
+
+    Ok(())
+}
+
+fn print_containers(containers: Vec<GetContainerResponse>) {
+    let id_column = "ID";
+    let mut id_len = id_column.len();
+
+    let name_column = "NAME";
+    let mut name_len = name_column.len();
+
+    let status_column = "STATUS";
+    let mut status_len = status_column.len();
+
+    let exit_code_column = "EXIT_CODE";
+    let mut exit_code_len = exit_code_column.len();
+
+    let created_at_column = "CREATED_AT";
+    let mut created_at_len = created_at_column.len();
+
+    for container in containers.iter() {
+        id_len = max(id_len, container.id.len());
+        name_len = max(name_len, container.name.len());
+        status_len = max(status_len, container.status.len());
+        exit_code_len = max(exit_code_len, format!("{}", container.exit_code).len());
+        created_at_len = max(created_at_len, container.created_at.len());
+    }
+
+    println!(
+        "{:<id$} {:<name$} {:<status$} {:<exit_code$} {:<created_at$}",
+        id_column,
+        name_column,
+        status_column,
+        exit_code_column,
+        created_at_column,
+        id = id_len,
+        name = name_len,
+        status = status_len,
+        exit_code = exit_code_len,
+        created_at = created_at_len,
+    );
+    for container in containers.iter() {
+        println!(
+            "{:<id$} {:<name$} {:<status$} {:<exit_code$} {:<created_at$}",
+            container.id,
+            container.name,
+            container.status,
+            container.exit_code,
+            container.created_at,
+            id = id_len,
+            name = name_len,
+            status = status_len,
+            exit_code = exit_code_len,
+            created_at = created_at_len,
+        );
+    }
 }

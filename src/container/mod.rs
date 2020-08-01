@@ -36,7 +36,7 @@ pub struct RuncStatus {
     pub status: String,
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum Status {
     Initialized,
     Created,
@@ -56,6 +56,12 @@ impl Status {
             "stopped" => Status::Stopped,
             _ => Status::Unknown,
         }
+    }
+}
+
+impl fmt::Display for Status {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 
@@ -141,6 +147,11 @@ impl ContainerMap {
         }
         let container_clone = map.get(container_id).unwrap().clone();
         Ok(Box::new(container_clone))
+    }
+
+    pub fn list(self: &Self) -> Result<Vec<Container>, ContainerMapError> {
+        let map = self.map.lock().unwrap();
+        Ok(map.values().map(|c| c.clone()).collect())
     }
 
     pub fn remove(self: &Self, container_id: &ID) {

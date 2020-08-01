@@ -72,7 +72,16 @@ fn main() {
                         ),
                 )
                 .subcommand(SubCommand::with_name(CONTAINER_STOP).about("stops container"))
-                .subcommand(SubCommand::with_name(CONTAINER_GET).about("gets container"))
+                .subcommand(
+                    SubCommand::with_name(CONTAINER_GET)
+                        .about("gets container")
+                        .arg(
+                            Arg::with_name(CONTAINER_ID)
+                                .help("container id")
+                                .required(true)
+                                .index(1),
+                        ),
+                )
                 .subcommand(SubCommand::with_name(CONTAINER_LIST).about("lists container"))
                 .subcommand(SubCommand::with_name(CONTAINER_DELETE).about("deletes container")),
         )
@@ -106,10 +115,11 @@ fn main() {
             println!("NOT IMPLEMENTED: container stop {:?}", matches)
         }
         if let Some(matches) = matches.subcommand_matches(CONTAINER_GET) {
-            println!("NOT IMPLEMENTED: container get {:?}", matches)
+            let container_id = matches.value_of(CONTAINER_ID).unwrap();
+            client::get_container(port, container_id.into()).expect("get container failed");
         }
-        if let Some(matches) = matches.subcommand_matches(CONTAINER_LIST) {
-            println!("NOT IMPLEMENTED: container list {:?}", matches)
+        if let Some(_) = matches.subcommand_matches(CONTAINER_LIST) {
+            client::list_containers(port).expect("list containers failed");
         }
         if let Some(matches) = matches.subcommand_matches(CONTAINER_DELETE) {
             println!("NOT IMPLEMENTED: container delete {:?}", matches)
