@@ -240,6 +240,42 @@ impl ContainerManager {
         self.atomic_persist_container_state(&container_id)
     }
 
+    pub fn stop_container(self: &Self, container_id: &ID) -> Result<(), ContainerManagerError> {
+        // ensure container exists and is in running state
+        match self.container_map.get(container_id) {
+            Ok(container) => {
+                if container.status != Status::Running {
+                    return Err(ContainerManagerError::new(
+                        &container_id,
+                        format!("container does not have `Running` status"),
+                    ));
+                }
+            }
+            Err(err) => {
+                return Err(ContainerManagerError::new(
+                    container_id,
+                    format!("{:?}", err),
+                ))
+            }
+        }
+        // need to run: runc kill container_id 9
+        // container kill
+        match self.container_runtime.kill_container(container_id) {
+            Ok(_) => (),
+            Err(err) => {
+                return Err(ContainerManagerError::new(
+                    &container_id,
+                    format!("{:?}", err),
+                ))
+            }
+        }
+        // TODO: right now we aren't updating the 'finished_at' time, assuming we'll
+        //       be able to rely on the integration with the runtime shim to provide this update
+        // update container status and persist to disk
+        self.update_container_status(&container_id, Status::Stopped)?;
+        self.atomic_persist_container_state(&container_id)
+    }
+
     pub fn get_container(
         self: &Self,
         container_id: &ID,

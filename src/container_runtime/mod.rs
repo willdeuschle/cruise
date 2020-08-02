@@ -148,6 +148,28 @@ impl ContainerRuntime {
         Ok(())
     }
 
+    pub fn kill_container(self: &Self, container_id: &ID) -> Result<(), ContainerRuntimeError> {
+        let mut runc_kill = Command::new(&self.runtime_path);
+        runc_kill
+            .arg("kill")
+            .arg(format!("{}", container_id))
+            .arg("9");
+        match runc_kill.output() {
+            // printing this for now so that we can see the result of the execution
+            // TODO: clean this up (debug logging?)
+            Ok(out) => println!("out: {:?}", out),
+            Err(err) => {
+                return Err(ContainerRuntimeError {
+                    reason: format!(
+                        "failed to output `runc kill {} 9`: err: `{}`",
+                        container_id, err
+                    ),
+                })
+            }
+        }
+        Ok(())
+    }
+
     pub fn get_container_status(
         self: &Self,
         container_id: &ID,

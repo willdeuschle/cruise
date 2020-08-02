@@ -71,7 +71,16 @@ fn main() {
                                 .index(1),
                         ),
                 )
-                .subcommand(SubCommand::with_name(CONTAINER_STOP).about("stops container"))
+                .subcommand(
+                    SubCommand::with_name(CONTAINER_STOP)
+                        .about("stops container")
+                        .arg(
+                            Arg::with_name(CONTAINER_ID)
+                                .help("container id")
+                                .required(true)
+                                .index(1),
+                        ),
+                )
                 .subcommand(
                     SubCommand::with_name(CONTAINER_GET)
                         .about("gets container")
@@ -112,7 +121,8 @@ fn main() {
             client::start_container(port, container_id.into()).expect("start container failed");
         }
         if let Some(matches) = matches.subcommand_matches(CONTAINER_STOP) {
-            println!("NOT IMPLEMENTED: container stop {:?}", matches)
+            let container_id = matches.value_of(CONTAINER_ID).unwrap();
+            client::stop_container(port, container_id.into()).expect("stop container failed");
         }
         if let Some(matches) = matches.subcommand_matches(CONTAINER_GET) {
             let container_id = matches.value_of(CONTAINER_ID).unwrap();

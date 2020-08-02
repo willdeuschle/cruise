@@ -6,6 +6,7 @@ package cruise;
 service Cruise {
   rpc CreateContainer (CreateContainerRequest) returns (CreateContainerResponse) {}
   rpc StartContainer (StartContainerRequest) returns (StartContainerResponse) {}
+  rpc StopContainer (StopContainerRequest) returns (StopContainerResponse) {}
   rpc GetContainer (GetContainerRequest) returns (GetContainerResponse) {}
   rpc ListContainers (ListContainersRequest) returns (ListContainersResponse) {}
 }
@@ -26,6 +27,14 @@ message StartContainerRequest {
 }
 
 message StartContainerResponse {
+  bool success = 1;
+}
+
+message StopContainerRequest {
+  string container_id = 1;
+}
+
+message StopContainerResponse {
   bool success = 1;
 }
 
