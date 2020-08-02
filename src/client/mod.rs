@@ -92,40 +92,64 @@ fn print_containers(containers: Vec<GetContainerResponse>) {
     let created_at_column = "CREATED_AT";
     let mut created_at_len = created_at_column.len();
 
+    let started_at_column = "STARTED_AT";
+    let mut started_at_len = started_at_column.len();
+
+    let command_column = "COMMAND";
+    let mut command_len = command_column.len();
+
+    let args_column = "ARGS";
+    let mut args_len = args_column.len();
+
     for container in containers.iter() {
         id_len = max(id_len, container.id.len());
         name_len = max(name_len, container.name.len());
         status_len = max(status_len, container.status.len());
         exit_code_len = max(exit_code_len, format!("{}", container.exit_code).len());
         created_at_len = max(created_at_len, container.created_at.len());
+        started_at_len = max(started_at_len, container.started_at.len());
+        command_len = max(command_len, container.command.len());
+        args_len = max(args_len, container.args.len());
     }
 
     println!(
-        "{:<id$} {:<name$} {:<status$} {:<exit_code$} {:<created_at$}",
+        "{:<id$} {:<name$} {:<status$} {:<exit_code$} {:<created_at$} {:<started_at$} {:<command$} {:<args$}",
         id_column,
         name_column,
         status_column,
         exit_code_column,
         created_at_column,
+        started_at_column,
+        command_column,
+        args_column,
         id = id_len,
         name = name_len,
         status = status_len,
         exit_code = exit_code_len,
         created_at = created_at_len,
+        started_at = started_at_len,
+        command = command_len,
+        args = args_len,
     );
     for container in containers.iter() {
         println!(
-            "{:<id$} {:<name$} {:<status$} {:<exit_code$} {:<created_at$}",
+            "{:<id$} {:<name$} {:<status$} {:<exit_code$} {:<created_at$} {:<started_at$} {:<command$} {:<args$}",
             container.id,
             container.name,
             container.status,
             container.exit_code,
             container.created_at,
+            container.started_at,
+            container.command,
+            container.args.join(","),
             id = id_len,
             name = name_len,
             status = status_len,
             exit_code = exit_code_len,
             created_at = created_at_len,
+            started_at = started_at_len,
+            command = command_len,
+            args = args_len,
         );
     }
 }

@@ -39,6 +39,9 @@ message GetContainerResponse {
   string status = 3;
   int32 exit_code = 4;
   string created_at = 5;
+  string started_at = 6;
+  string command = 7;
+  repeated string args = 8;
 }
 
 message ListContainersRequest {

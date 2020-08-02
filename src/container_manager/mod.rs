@@ -132,7 +132,8 @@ impl ContainerManager {
         // generate container id
         let container_id = rand_id();
         // create & store in-memory container structure
-        let container: Container = new_container(&container_id, opts.name);
+        let container: Container =
+            new_container(&container_id, &opts.name, &opts.command, &opts.args);
         let container_id = match self.container_map.add(container) {
             Ok(container_id) => container_id,
             Err(err) => {

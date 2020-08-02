@@ -121,5 +121,14 @@ fn map_container_to_container_response(container: Container) -> GetContainerResp
             }
             None => "Not created yet.".into(),
         },
+        started_at: match container.started_at {
+            Some(started_at) => {
+                let datetime: DateTime<Utc> = started_at.into();
+                format!("{}", datetime.format("%+"))
+            }
+            None => "Not started yet.".into(),
+        },
+        command: container.command,
+        args: container.args,
     }
 }
