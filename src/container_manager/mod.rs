@@ -238,7 +238,7 @@ impl ContainerManager {
         self: &Self,
         container_id: &ID,
     ) -> Result<Box<Container>, ContainerManagerError> {
-        // TODO: sync container state before the get
+        self.sync_container_status_with_runtime(container_id)?;
         match self.container_map.get(container_id) {
             Ok(container) => Ok(container),
             Err(err) => {
@@ -251,7 +251,19 @@ impl ContainerManager {
     }
 
     pub fn list_containers(self: &Self) -> Result<Vec<Container>, ContainerManagerError> {
-        // TODO: sync container state before the list
+        match self.container_map.list() {
+            Ok(containers) => {
+                for container in containers.iter() {
+                    self.sync_container_status_with_runtime(container.id())?;
+                }
+            }
+            Err(err) => {
+                return Err(ContainerManagerError::new(
+                    &String::from("no specific container_id"),
+                    format!("{:?}", err),
+                ))
+            }
+        };
         match self.container_map.list() {
             Ok(containers) => Ok(containers),
             Err(err) => {
