@@ -1,5 +1,7 @@
 use crate::container::{Container, ID};
-use std::fs::{copy, create_dir, create_dir_all, read_dir, read_to_string, remove_dir_all, write};
+use std::fs::{
+    copy, create_dir, create_dir_all, read_dir, read_to_string, remove_dir_all, rename, write,
+};
 use std::io::{Error, ErrorKind};
 use std::path::Path;
 
@@ -110,11 +112,13 @@ impl ContainerStore {
         Ok(self.bundle_dir(container_id))
     }
 
-    pub fn persist_container_state(self: &Self, container: &Container) -> Result<(), Error> {
+    pub fn atomic_persist_container_state(self: &Self, container: &Container) -> Result<(), Error> {
         let serialized_container = serde_json::to_string(&container)?;
-        write(
+        let temp_container_state_file = self.temp_container_state_file(container.id());
+        write(&temp_container_state_file, serialized_container)?;
+        rename(
+            &temp_container_state_file,
             self.container_state_file(container.id()),
-            serialized_container,
         )?;
         Ok(())
     }
@@ -149,6 +153,10 @@ impl ContainerStore {
             "{}/container.state",
             self.specific_container_dir(container_id)
         )
+    }
+
+    fn temp_container_state_file(self: &Self, container_id: &ID) -> String {
+        format!("{}.temp", self.container_state_file(container_id))
     }
 
     fn specific_container_dir(self: &Self, container_id: &ID) -> String {

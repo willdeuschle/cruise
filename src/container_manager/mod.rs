@@ -195,7 +195,7 @@ impl ContainerManager {
         // update container creation time, status, and persist to disk
         self.update_container_created_at(&container_id, SystemTime::now())?;
         self.update_container_status(&container_id, Status::Created)?;
-        match self.persist_container_state(&container_id) {
+        match self.atomic_persist_container_state(&container_id) {
             Ok(_) => Ok(container_id),
             Err(err) => Err(err),
         }
@@ -231,7 +231,7 @@ impl ContainerManager {
         }
         // update container status and persist to disk
         self.update_container_status(&container_id, Status::Running)?;
-        self.persist_container_state(&container_id)
+        self.atomic_persist_container_state(&container_id)
     }
 
     pub fn get_container(
@@ -278,7 +278,7 @@ impl ContainerManager {
         };
         // update container status and persist to disk
         self.update_container_status(&container_id, status)?;
-        self.persist_container_state(&container_id)
+        self.atomic_persist_container_state(&container_id)
     }
 
     /// update_container_status updates container status in memory
@@ -318,8 +318,8 @@ impl ContainerManager {
         }
     }
 
-    /// persist_container_state persists container state to disk
-    fn persist_container_state(
+    /// atomic_persist_container_state persists container state to disk
+    fn atomic_persist_container_state(
         self: &Self,
         container_id: &ID,
     ) -> Result<(), ContainerManagerError> {
@@ -332,7 +332,10 @@ impl ContainerManager {
                 ))
             }
         };
-        match self.container_store.persist_container_state(&container) {
+        match self
+            .container_store
+            .atomic_persist_container_state(&container)
+        {
             Ok(_) => Ok(()),
             Err(err) => {
                 return Err(ContainerManagerError::new(
