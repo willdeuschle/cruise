@@ -230,7 +230,12 @@ impl ContainerManager {
                 ))
             }
         }
-        // update container status and persist to disk
+        // TODO: one other way we could consider doing this is polling runc until
+        //       we see that the container is running and then updating. this current
+        //       approach just optimistically sets the container to running and allows
+        //       future calls to get/list to synchronize with runc
+        // update container start time, status, and persist to disk
+        self.update_container_started_at(&container_id, SystemTime::now())?;
         self.update_container_status(&container_id, Status::Running)?;
         self.atomic_persist_container_state(&container_id)
     }
@@ -320,6 +325,26 @@ impl ContainerManager {
         match self
             .container_map
             .update_creation_time(container_id, created_at)
+        {
+            Ok(_) => Ok(()),
+            Err(err) => {
+                return Err(ContainerManagerError::new(
+                    &container_id,
+                    format!("{:?}", err),
+                ))
+            }
+        }
+    }
+
+    /// update_container_started_at updates container start time in memory
+    fn update_container_started_at(
+        self: &Self,
+        container_id: &ID,
+        started_at: SystemTime,
+    ) -> Result<(), ContainerManagerError> {
+        match self
+            .container_map
+            .update_start_time(container_id, started_at)
         {
             Ok(_) => Ok(()),
             Err(err) => {

@@ -147,6 +147,22 @@ impl ContainerMap {
         Ok(())
     }
 
+    pub fn update_start_time(
+        self: &Self,
+        container_id: &ID,
+        started_at: SystemTime,
+    ) -> Result<(), ContainerMapError> {
+        let mut map = self.map.lock().unwrap();
+        if !map.contains_key(container_id) {
+            return Err(ContainerMapError {
+                reason: format!("container with ID `{}` does not exist", container_id),
+            });
+        }
+        let container = map.get_mut(container_id).unwrap();
+        container.started_at = Some(started_at);
+        Ok(())
+    }
+
     pub fn get(self: &Self, container_id: &ID) -> Result<Box<Container>, ContainerMapError> {
         let map = self.map.lock().unwrap();
         if !map.contains_key(container_id) {
