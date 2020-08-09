@@ -15,8 +15,8 @@ pub struct Container {
 
     pub created_at: Option<SystemTime>,
     pub started_at: Option<SystemTime>,
-    // TODO: will require the shim integration
-    //pub finished_at: Option<SystemTime>,
+    // TODO: will require the shim integration to properly update this
+    pub finished_at: Option<SystemTime>,
     pub command: String,
     pub args: Vec<String>,
 }
@@ -35,6 +35,7 @@ pub fn new(id: &ID, name: &String, command: &String, args: &Vec<String>) -> Cont
         exit_code: -1,
         created_at: None,
         started_at: None,
+        finished_at: None,
         command: command.clone(),
         args: args.clone(),
     }

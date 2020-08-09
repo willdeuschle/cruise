@@ -4,6 +4,7 @@ use cruise_grpc::{
     CreateContainerRequest, DeleteContainerRequest, GetContainerRequest, GetContainerResponse,
     ListContainersRequest, StartContainerRequest, StopContainerRequest,
 };
+use log::debug;
 use std::cmp::max;
 
 mod cruise_grpc {
@@ -29,7 +30,7 @@ pub async fn create_container(
 
     let response = client.create_container(request).await?;
 
-    println!("RESPONSE={:?}", response);
+    debug!("Got create container response: {:?}", response);
 
     Ok(())
 }
@@ -45,7 +46,7 @@ pub async fn start_container(
 
     let response = client.start_container(request).await?;
 
-    println!("RESPONSE={:?}", response);
+    debug!("Got start container response: {:?}", response);
 
     Ok(())
 }
@@ -61,7 +62,7 @@ pub async fn stop_container(
 
     let response = client.stop_container(request).await?;
 
-    println!("RESPONSE={:?}", response);
+    debug!("Got stop container response: {:?}", response);
 
     Ok(())
 }
@@ -72,9 +73,11 @@ pub async fn get_container(port: &str, container_id: ID) -> Result<(), Box<dyn s
 
     let request = tonic::Request::new(GetContainerRequest { container_id });
 
-    let container = client.get_container(request).await?.into_inner();
+    let response = client.get_container(request).await?;
 
-    print_containers(vec![container]);
+    debug!("Got get container response: {:?}", response);
+
+    print_containers(vec![response.into_inner()]);
 
     Ok(())
 }
@@ -85,9 +88,11 @@ pub async fn list_containers(port: &str) -> Result<(), Box<dyn std::error::Error
 
     let request = tonic::Request::new(ListContainersRequest {});
 
-    let container_list = client.list_containers(request).await?.into_inner();
+    let response = client.list_containers(request).await?;
 
-    print_containers(container_list.containers);
+    debug!("Got list containers response: {:?}", response);
+
+    print_containers(response.into_inner().containers);
 
     Ok(())
 }
@@ -103,7 +108,7 @@ pub async fn delete_container(
 
     let response = client.delete_container(request).await?;
 
-    println!("RESPONSE={:?}", response);
+    debug!("Got delete container response: {:?}", response);
 
     Ok(())
 }
@@ -127,6 +132,9 @@ fn print_containers(containers: Vec<GetContainerResponse>) {
     let started_at_column = "STARTED_AT";
     let mut started_at_len = started_at_column.len();
 
+    let finished_at_column = "FINISHED_AT";
+    let mut finished_at_len = finished_at_column.len();
+
     let command_column = "COMMAND";
     let mut command_len = command_column.len();
 
@@ -140,18 +148,20 @@ fn print_containers(containers: Vec<GetContainerResponse>) {
         exit_code_len = max(exit_code_len, format!("{}", container.exit_code).len());
         created_at_len = max(created_at_len, container.created_at.len());
         started_at_len = max(started_at_len, container.started_at.len());
+        finished_at_len = max(finished_at_len, container.finished_at.len());
         command_len = max(command_len, container.command.len());
         args_len = max(args_len, container.args.len());
     }
 
     println!(
-        "{:<id$} {:<name$} {:<status$} {:<exit_code$} {:<created_at$} {:<started_at$} {:<command$} {:<args$}",
+        "{:<id$} {:<name$} {:<status$} {:<exit_code$} {:<created_at$} {:<started_at$} {:<finished_at$} {:<command$} {:<args$}",
         id_column,
         name_column,
         status_column,
         exit_code_column,
         created_at_column,
         started_at_column,
+        finished_at_column,
         command_column,
         args_column,
         id = id_len,
@@ -160,18 +170,20 @@ fn print_containers(containers: Vec<GetContainerResponse>) {
         exit_code = exit_code_len,
         created_at = created_at_len,
         started_at = started_at_len,
+        finished_at = finished_at_len,
         command = command_len,
         args = args_len,
     );
     for container in containers.iter() {
         println!(
-            "{:<id$} {:<name$} {:<status$} {:<exit_code$} {:<created_at$} {:<started_at$} {:<command$} {:<args$}",
+            "{:<id$} {:<name$} {:<status$} {:<exit_code$} {:<created_at$} {:<started_at$} {:<finished_at$} {:<command$} {:<args$}",
             container.id,
             container.name,
             container.status,
             container.exit_code,
             container.created_at,
             container.started_at,
+            container.finished_at,
             container.command,
             container.args.join(","),
             id = id_len,
@@ -180,6 +192,7 @@ fn print_containers(containers: Vec<GetContainerResponse>) {
             exit_code = exit_code_len,
             created_at = created_at_len,
             started_at = started_at_len,
+            finished_at = finished_at_len,
             command = command_len,
             args = args_len,
         );

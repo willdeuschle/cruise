@@ -1,5 +1,6 @@
 use chrono::offset::Utc;
 use chrono::DateTime;
+use log::debug;
 use tonic::{transport::Server, Request, Response, Status};
 
 use crate::container::Container;
@@ -46,7 +47,7 @@ impl Cruise for CruiseDaemon {
         &self,
         request: Request<CreateContainerRequest>,
     ) -> Result<Response<CreateContainerResponse>, Status> {
-        println!("Got a request: {:?}", request);
+        debug!("Got create container request: {:?}", request);
 
         let request = request.into_inner();
         let container_opts = ContainerOptions {
@@ -66,7 +67,7 @@ impl Cruise for CruiseDaemon {
         &self,
         request: Request<StartContainerRequest>,
     ) -> Result<Response<StartContainerResponse>, Status> {
-        println!("Got a request: {:?}", request);
+        debug!("Got start container request: {:?}", request);
 
         let request = request.into_inner();
 
@@ -80,7 +81,7 @@ impl Cruise for CruiseDaemon {
         &self,
         request: Request<StopContainerRequest>,
     ) -> Result<Response<StopContainerResponse>, Status> {
-        println!("Got a request: {:?}", request);
+        debug!("Got stop container request: {:?}", request);
 
         let request = request.into_inner();
 
@@ -94,7 +95,7 @@ impl Cruise for CruiseDaemon {
         &self,
         request: Request<DeleteContainerRequest>,
     ) -> Result<Response<DeleteContainerResponse>, Status> {
-        println!("Got a request: {:?}", request);
+        debug!("Got delete container request: {:?}", request);
 
         let request = request.into_inner();
 
@@ -108,7 +109,7 @@ impl Cruise for CruiseDaemon {
         &self,
         request: Request<GetContainerRequest>,
     ) -> Result<Response<GetContainerResponse>, Status> {
-        println!("Got a request: {:?}", request);
+        debug!("Got get container request: {:?}", request);
 
         let request = request.into_inner();
 
@@ -124,7 +125,7 @@ impl Cruise for CruiseDaemon {
         &self,
         request: Request<ListContainersRequest>,
     ) -> Result<Response<ListContainersResponse>, Status> {
-        println!("Got a request: {:?}", request);
+        debug!("Got list containers request: {:?}", request);
 
         match self.cm.list_containers() {
             Ok(containers) => Ok(Response::new(ListContainersResponse {
@@ -158,6 +159,7 @@ fn map_container_to_container_response(container: Container) -> GetContainerResp
             }
             None => "Not started yet.".into(),
         },
+        finished_at: "n/a".into(), // TODO: update when we have the container shim reporting finishing time
         command: container.command,
         args: container.args,
     }

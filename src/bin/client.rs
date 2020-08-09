@@ -1,9 +1,14 @@
 use clap::{App, AppSettings, Arg, SubCommand};
+use log::LevelFilter;
 
 use cruise::client;
+use cruise::logging::SimpleLogger;
+
+static LOGGER: SimpleLogger = SimpleLogger;
 
 const CONTAINER_SUBCMD: &str = "container";
 const PORT: &str = "port";
+const DEBUG_ARG: &str = "debug";
 
 const CONTAINER_CREATE: &str = "create";
 const CONTAINER_START: &str = "start";
@@ -23,6 +28,12 @@ fn main() {
         .version("0.0")
         .author("Will D. <wjdeuschle@gmail.com>")
         .about("Cruise container manager client")
+        .arg(
+            Arg::with_name(DEBUG_ARG)
+                .help("enable debug logging")
+                .long("debug")
+                .short("v"),
+        )
         .subcommand(
             SubCommand::with_name(CONTAINER_SUBCMD)
                 .about("controls containers")
@@ -104,6 +115,17 @@ fn main() {
                 ),
         )
         .get_matches();
+
+    let log_level = if matches.is_present(DEBUG_ARG) {
+        LevelFilter::Debug
+    } else {
+        LevelFilter::Error
+    };
+    let _ = log::set_logger(&LOGGER)
+        .map(|()| log::set_max_level(log_level))
+        .unwrap_or_else(|err| {
+            eprintln!("failed to set logger: `{}`", err);
+        });
 
     if let Some(matches) = matches.subcommand_matches(CONTAINER_SUBCMD) {
         let port = matches.value_of(PORT).unwrap();

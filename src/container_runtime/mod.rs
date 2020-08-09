@@ -1,4 +1,5 @@
 use crate::container::{RuncStatus, Status, ID};
+use log::debug;
 use std::process::Command;
 
 #[derive(Debug)]
@@ -117,9 +118,7 @@ impl ContainerRuntime {
             .arg(format!("{}/{}", &opts.bundle_path, &opts.container_pidfile))
             .arg(opts.container_id);
         match runc_create.spawn() {
-            // printing this for now so that we can see the result of the execution
-            // TODO: clean this up (debug logging?)
-            Ok(out) => println!("out: {:?}", out),
+            Ok(out) => debug!("runc create output: {:?}", out),
             Err(err) => {
                 return Err(ContainerRuntimeError {
                     reason: format!("failed to spawn `runc create`: err: `{}`", err),
@@ -133,9 +132,7 @@ impl ContainerRuntime {
         let mut runc_start = Command::new(&self.runtime_path);
         runc_start.arg("start").arg(format!("{}", container_id));
         match runc_start.spawn() {
-            // printing this for now so that we can see the result of the execution
-            // TODO: clean this up (debug logging?)
-            Ok(out) => println!("out: {:?}", out),
+            Ok(out) => debug!("runc start output: {:?}", out),
             Err(err) => {
                 return Err(ContainerRuntimeError {
                     reason: format!(
@@ -155,9 +152,7 @@ impl ContainerRuntime {
             .arg(format!("{}", container_id))
             .arg("9");
         match runc_kill.output() {
-            // printing this for now so that we can see the result of the execution
-            // TODO: clean this up (debug logging?)
-            Ok(out) => println!("out: {:?}", out),
+            Ok(out) => debug!("runc kill output: {:?}", out),
             Err(err) => {
                 return Err(ContainerRuntimeError {
                     reason: format!(
@@ -174,9 +169,7 @@ impl ContainerRuntime {
         let mut runc_delete = Command::new(&self.runtime_path);
         runc_delete.arg("delete").arg(format!("{}", container_id));
         match runc_delete.output() {
-            // printing this for now so that we can see the result of the execution
-            // TODO: clean this up (debug logging?)
-            Ok(out) => println!("out: {:?}", out),
+            Ok(out) => debug!("runc delete output: {:?}", out),
             Err(err) => {
                 return Err(ContainerRuntimeError {
                     reason: format!(

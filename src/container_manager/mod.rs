@@ -1,6 +1,7 @@
 use crate::container::{new as new_container, rand_id, Container, ContainerMap, Status, ID};
 use crate::container_runtime::{ContainerRuntime, RuntimeCreateOptions, RuntimeSpecOptions};
 use crate::container_store::ContainerStore;
+use log::error;
 use std::time::SystemTime;
 
 #[derive(Debug)]
@@ -58,8 +59,7 @@ impl ContainerManager {
             let container = match self.container_store.read_container_state(&container_id) {
                 Ok(container) => container,
                 Err(err) => {
-                    // TODO: error logging
-                    eprintln!(
+                    error!(
                         "unable to parse state of container `{}`, err: `{}`. Removing container.",
                         container_id, err
                     );
@@ -70,10 +70,9 @@ impl ContainerManager {
             match self.container_map.add(container) {
                 Ok(_) => (),
                 Err(err) => {
-                    // TODO: error logging
-                    eprintln!(
-                        "unable to add container to in-memory state, err: `{:?}`. Continuing.",
-                        err
+                    error!(
+                        "unable to add container `{}` to in-memory state, err: `{:?}`. Continuing.",
+                        container_id, err
                     );
                     continue;
                 }
@@ -81,7 +80,7 @@ impl ContainerManager {
             match self.sync_container_status_with_runtime(&container_id) {
                 Ok(_) => (),
                 Err(err) => {
-                    eprintln!(
+                    error!(
                         "unable to sync state of container `{}`, err: `{:?}`. Removing container.",
                         container_id, err
                     );
@@ -230,11 +229,11 @@ impl ContainerManager {
                 ))
             }
         }
-        // TODO: one other way we could consider doing this is polling runc until
-        //       we see that the container is running and then updating. this current
-        //       approach just optimistically sets the container to running and allows
-        //       future calls to get/list to synchronize with runc
         // update container start time, status, and persist to disk
+        //     this current approach just optimistically sets the container to
+        //     running and allows future calls to get/list to synchronize with runc.
+        //     one other way we could consider doing this is polling runc until we
+        //     see that the container is running and then updating.
         self.update_container_started_at(&container_id, SystemTime::now())?;
         self.update_container_status(&container_id, Status::Running)?;
         self.atomic_persist_container_state(&container_id)
@@ -269,8 +268,6 @@ impl ContainerManager {
                 ))
             }
         }
-        // TODO: right now we aren't updating the 'finished_at' time, assuming we'll
-        //       be able to rely on the integration with the runtime shim to provide this update
         // update container status and persist to disk
         self.update_container_status(&container_id, Status::Stopped)?;
         self.atomic_persist_container_state(&container_id)
@@ -299,8 +296,10 @@ impl ContainerManager {
             Ok(_) => (),
             Err(err) => {
                 // continue with best-effort deletion
-                // TODO: standardized error logging
-                eprintln!("{:?}", err);
+                error!(
+                    "container runtime deletion failed for container `{}`, err: `{:?}`. Continuing with best effort deletion.",
+                    container_id, err
+                );
             }
         };
         // remove container from memory and disk
