@@ -92,7 +92,16 @@ fn main() {
                         ),
                 )
                 .subcommand(SubCommand::with_name(CONTAINER_LIST).about("lists container"))
-                .subcommand(SubCommand::with_name(CONTAINER_DELETE).about("deletes container")),
+                .subcommand(
+                    SubCommand::with_name(CONTAINER_DELETE)
+                        .about("deletes container")
+                        .arg(
+                            Arg::with_name(CONTAINER_ID)
+                                .help("container id")
+                                .required(true)
+                                .index(1),
+                        ),
+                ),
         )
         .get_matches();
 
@@ -132,7 +141,8 @@ fn main() {
             client::list_containers(port).expect("list containers failed");
         }
         if let Some(matches) = matches.subcommand_matches(CONTAINER_DELETE) {
-            println!("NOT IMPLEMENTED: container delete {:?}", matches)
+            let container_id = matches.value_of(CONTAINER_ID).unwrap();
+            client::delete_container(port, container_id.into()).expect("delete container failed");
         }
     }
 }

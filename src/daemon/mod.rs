@@ -7,9 +7,10 @@ use crate::container_manager::{ContainerManager, ContainerOptions};
 
 use cruise_grpc::cruise_server::{Cruise, CruiseServer};
 use cruise_grpc::{
-    CreateContainerRequest, CreateContainerResponse, GetContainerRequest, GetContainerResponse,
-    ListContainersRequest, ListContainersResponse, StartContainerRequest, StartContainerResponse,
-    StopContainerRequest, StopContainerResponse,
+    CreateContainerRequest, CreateContainerResponse, DeleteContainerRequest,
+    DeleteContainerResponse, GetContainerRequest, GetContainerResponse, ListContainersRequest,
+    ListContainersResponse, StartContainerRequest, StartContainerResponse, StopContainerRequest,
+    StopContainerResponse,
 };
 
 mod cruise_grpc {
@@ -85,6 +86,20 @@ impl Cruise for CruiseDaemon {
 
         match self.cm.stop_container(&request.container_id) {
             Ok(_) => Ok(Response::new(StopContainerResponse { success: true })),
+            Err(err) => Err(Status::new(tonic::Code::Internal, format!("{:?}", err))),
+        }
+    }
+
+    async fn delete_container(
+        &self,
+        request: Request<DeleteContainerRequest>,
+    ) -> Result<Response<DeleteContainerResponse>, Status> {
+        println!("Got a request: {:?}", request);
+
+        let request = request.into_inner();
+
+        match self.cm.delete_container(&request.container_id) {
+            Ok(_) => Ok(Response::new(DeleteContainerResponse { success: true })),
             Err(err) => Err(Status::new(tonic::Code::Internal, format!("{:?}", err))),
         }
     }

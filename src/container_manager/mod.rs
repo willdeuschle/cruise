@@ -276,6 +276,39 @@ impl ContainerManager {
         self.atomic_persist_container_state(&container_id)
     }
 
+    pub fn delete_container(self: &Self, container_id: &ID) -> Result<(), ContainerManagerError> {
+        // ensure container exists and is in stopped state
+        match self.container_map.get(container_id) {
+            Ok(container) => {
+                if container.status != Status::Stopped {
+                    return Err(ContainerManagerError::new(
+                        &container_id,
+                        format!("container does not have `Stopped` status, cannot delete"),
+                    ));
+                }
+            }
+            Err(err) => {
+                return Err(ContainerManagerError::new(
+                    container_id,
+                    format!("{:?}", err),
+                ))
+            }
+        }
+        // container delete
+        match self.container_runtime.delete_container(container_id) {
+            Ok(_) => (),
+            Err(err) => {
+                // continue with best-effort deletion
+                // TODO: standardized error logging
+                eprintln!("{:?}", err);
+            }
+        };
+        // remove container from memory and disk
+        self.container_map.remove(&container_id);
+        self.container_store.remove_container(&container_id);
+        Ok(())
+    }
+
     pub fn get_container(
         self: &Self,
         container_id: &ID,

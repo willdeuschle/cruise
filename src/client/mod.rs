@@ -1,8 +1,8 @@
 use crate::container::ID;
 use cruise_grpc::cruise_client::CruiseClient;
 use cruise_grpc::{
-    CreateContainerRequest, GetContainerRequest, GetContainerResponse, ListContainersRequest,
-    StartContainerRequest, StopContainerRequest,
+    CreateContainerRequest, DeleteContainerRequest, GetContainerRequest, GetContainerResponse,
+    ListContainersRequest, StartContainerRequest, StopContainerRequest,
 };
 use std::cmp::max;
 
@@ -88,6 +88,22 @@ pub async fn list_containers(port: &str) -> Result<(), Box<dyn std::error::Error
     let container_list = client.list_containers(request).await?.into_inner();
 
     print_containers(container_list.containers);
+
+    Ok(())
+}
+
+#[tokio::main]
+pub async fn delete_container(
+    port: &str,
+    container_id: ID,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut client = CruiseClient::connect(format!("http://[::1]:{}", port)).await?;
+
+    let request = tonic::Request::new(DeleteContainerRequest { container_id });
+
+    let response = client.delete_container(request).await?;
+
+    println!("RESPONSE={:?}", response);
 
     Ok(())
 }
