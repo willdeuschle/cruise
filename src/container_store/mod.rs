@@ -132,7 +132,20 @@ impl ContainerStore {
 
     pub fn list_container_ids(self: &Self) -> Result<Vec<ID>, Error> {
         let mut container_ids = vec![];
-        for container_dir in read_dir(self.container_dir())? {
+        let container_dirs = match read_dir(self.container_dir()) {
+            Ok(container_dirs) => container_dirs,
+            Err(err) => {
+                return Err(Error::new(
+                    ErrorKind::Other,
+                    format!(
+                        "not able to read container_dir `{}`: {}",
+                        self.container_dir(),
+                        err
+                    ),
+                ))
+            }
+        };
+        for container_dir in container_dirs {
             let container_dir = container_dir?.path();
             let container_id = match container_dir.components().last() {
                 Some(container_id) => container_id,
