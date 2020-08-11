@@ -69,8 +69,9 @@ where
 
 impl ContainerStore {
     pub fn new(root_dir: String) -> Result<ContainerStore, Error> {
-        let _ = create_dir_all(root_dir.clone())?;
-        Ok(ContainerStore { root_dir: root_dir })
+        let cs = ContainerStore { root_dir: root_dir };
+        let _ = create_dir_all(cs.container_dir())?;
+        Ok(cs)
     }
 
     // create_container creates the container directory on disk and returns the directory
