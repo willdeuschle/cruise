@@ -1,7 +1,16 @@
-use crate::container::{new as new_container, rand_id, Container, ContainerMap, Status, ID};
-use crate::container_runtime::{ContainerRuntime, RuntimeCreateOptions, RuntimeSpecOptions};
-use crate::container_store::ContainerStore;
+mod container_map;
+mod container_runtime;
+mod container_store;
+
+use crate::container::{new as new_container, rand_id, Container, Status, ID};
+use container_map::{ContainerMap, ContainerMapError};
+use container_runtime::{
+    ContainerRuntime, ContainerRuntimeError, RuntimeCreateOptions, RuntimeSpecOptions,
+};
+use container_store::{ContainerStore, ContainerStoreError};
 use log::error;
+use std::error::Error;
+use std::fmt;
 use std::time::SystemTime;
 
 #[derive(Debug)]
@@ -18,33 +27,87 @@ pub struct ContainerOptions {
     pub rootfs_path: String,
 }
 
-#[derive(Debug)]
-pub struct ContainerManagerError {
+struct InternalCreateContainerError {
     container_id: ID,
-    pub reason: String,
+    source: ContainerManagerError,
 }
 
-impl ContainerManagerError {
-    fn new(container_id: &ID, reason: String) -> ContainerManagerError {
-        ContainerManagerError {
-            container_id: container_id.clone(),
-            reason,
+#[derive(Debug)]
+pub enum ContainerManagerError {
+    // represents an error creating the container store
+    CreateContainerStoreError { source: ContainerStoreError },
+    // represents an error reloading the container manager
+    ReloadError { source: ContainerStoreError },
+    // represents an error from the container store
+    ContainerStoreError { source: ContainerStoreError },
+    // represents an error from the container map
+    ContainerMapError { source: ContainerMapError },
+    // represents an error from the container runtime
+    ContainerRuntimeError { source: ContainerRuntimeError },
+    // represents an error trying to create a container that's not in a created state
+    StartContainerNotInCreatedStateError { container_id: ID },
+    // represents an error trying to stop a container that's not in a running state
+    StopContainerNotInRunningStateError { container_id: ID },
+    // represents an error trying to delete a container that's not in a stopped state
+    DeleteContainerNotInStoppedStateError { container_id: ID },
+}
+
+impl fmt::Display for ContainerManagerError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Self::CreateContainerStoreError { .. } => write!(f, "failed to create container store"),
+            Self::ReloadError { .. } => write!(f, "failed to reload container manager"),
+            Self::ContainerStoreError { ref source } => source.fmt(f),
+            Self::ContainerMapError { ref source } => source.fmt(f),
+            Self::ContainerRuntimeError { ref source } => source.fmt(f),
+            Self::StartContainerNotInCreatedStateError { ref container_id } => write!(
+                f,
+                "container with container_id {} is not in a created state",
+                container_id
+            ),
+            Self::StopContainerNotInRunningStateError { ref container_id } => write!(
+                f,
+                "container with container_id {} is not in a running state",
+                container_id
+            ),
+            Self::DeleteContainerNotInStoppedStateError { ref container_id } => write!(
+                f,
+                "container with container_id {} is not in a stopped state",
+                container_id
+            ),
+        }
+    }
+}
+
+impl Error for ContainerManagerError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match *self {
+            Self::CreateContainerStoreError { ref source } => Some(source),
+            Self::ReloadError { ref source } => Some(source),
+            Self::ContainerStoreError { ref source } => source.source(),
+            Self::ContainerMapError { ref source } => source.source(),
+            Self::ContainerRuntimeError { ref source } => source.source(),
+            Self::StartContainerNotInCreatedStateError { .. } => None,
+            Self::StopContainerNotInRunningStateError { .. } => None,
+            Self::DeleteContainerNotInStoppedStateError { .. } => None,
         }
     }
 }
 
 impl ContainerManager {
-    pub fn new(root_dir: String, runtime_path: String) -> Result<ContainerManager, std::io::Error> {
-        let container_store = ContainerStore::new(root_dir)?;
+    pub fn new(
+        root_dir: String,
+        runtime_path: String,
+    ) -> Result<ContainerManager, ContainerManagerError> {
+        let container_store = ContainerStore::new(root_dir)
+            .map_err(|source| ContainerManagerError::CreateContainerStoreError { source })?;
         let container_manager = ContainerManager {
             container_map: ContainerMap::new(),
             container_store,
             container_runtime: ContainerRuntime::new(runtime_path),
         };
-        match container_manager.reload() {
-            Ok(_) => Ok(container_manager),
-            Err(err) => Err(err),
-        }
+        container_manager.reload()?;
+        Ok(container_manager)
     }
 
     /// reload does the following:
@@ -53,8 +116,11 @@ impl ContainerManager {
     ///       container is corrupted and remove it
     /// - adds the container to the in-memory store
     /// - syncs the container state with the container runtime (runc)
-    fn reload(self: &Self) -> Result<(), std::io::Error> {
-        let container_ids = self.container_store.list_container_ids()?;
+    fn reload(self: &Self) -> Result<(), ContainerManagerError> {
+        let container_ids = self
+            .container_store
+            .list_container_ids()
+            .map_err(|source| ContainerManagerError::ReloadError { source })?;
         for container_id in container_ids {
             let container = match self.container_store.read_container_state(&container_id) {
                 Ok(container) => container,
@@ -105,14 +171,11 @@ impl ContainerManager {
         self: &Self,
         opts: ContainerOptions,
     ) -> Result<String, ContainerManagerError> {
-        match self.create_container_helper(opts) {
-            Ok(container_id) => Ok(container_id),
-            Err(err) => {
-                // best effort rollback
-                self.rollback_container_create(&err.container_id);
-                Err(err)
-            }
-        }
+        self.create_container_helper(opts).or_else(|err| {
+            // best effort rollback
+            self.rollback_container_create(&err.container_id);
+            return Err(err.source);
+        })
     }
 
     /// create_container_helper does the following:
@@ -124,81 +187,75 @@ impl ContainerManager {
     ///     - generate the runc spec for the container
     /// - create the container (runc exec)
     /// - update container status, write those to disk
-    pub fn create_container_helper(
+    fn create_container_helper(
         self: &Self,
         opts: ContainerOptions,
-    ) -> Result<String, ContainerManagerError> {
+    ) -> Result<String, InternalCreateContainerError> {
         // generate container id
         let container_id = rand_id();
         // create & store in-memory container structure
         let container: Container =
             new_container(&container_id, &opts.name, &opts.command, &opts.args);
-        let container_id = match self.container_map.add(container) {
-            Ok(container_id) => container_id,
-            Err(err) => {
-                return Err(ContainerManagerError::new(
-                    &container_id,
-                    format!("{:?}", err),
-                ))
-            }
-        };
+        let container_id =
+            self.container_map
+                .add(container)
+                .map_err(|source| InternalCreateContainerError {
+                    container_id: container_id.clone(),
+                    source: ContainerManagerError::ContainerMapError { source },
+                })?;
         // create container directory on disk
-        match self.container_store.create_container(&container_id) {
-            Ok(_) => (),
-            Err(err) => {
-                return Err(ContainerManagerError::new(
-                    &container_id,
-                    format!("{:?}", err),
-                ))
-            }
-        };
+        self.container_store
+            .create_container(&container_id)
+            .map_err(|source| InternalCreateContainerError {
+                container_id: container_id.clone(),
+                source: ContainerManagerError::ContainerStoreError { source },
+            })?;
         // create container bundle on disk
-        let container_bundle_dir = match self
+        let container_bundle_dir = self
             .container_store
             .create_container_bundle(&container_id, &opts.rootfs_path)
-        {
-            Ok(container_bundle_dir) => container_bundle_dir,
-            Err(err) => {
-                return Err(ContainerManagerError::new(
-                    &container_id,
-                    format!("{:?}", err),
-                ))
-            }
-        };
+            .map_err(|source| InternalCreateContainerError {
+                container_id: container_id.clone(),
+                source: ContainerManagerError::ContainerStoreError { source },
+            })?;
         // create container runtime spec on disk
         let spec_opts =
             RuntimeSpecOptions::new(container_bundle_dir.clone(), opts.command, opts.args);
-        match self.container_runtime.new_runtime_spec(&spec_opts) {
-            Ok(()) => (),
-            Err(err) => {
-                return Err(ContainerManagerError::new(
-                    &container_id,
-                    format!("{:?}", err),
-                ))
-            }
-        }
+        self.container_runtime
+            .new_runtime_spec(&spec_opts)
+            .map_err(|source| InternalCreateContainerError {
+                container_id: container_id.clone(),
+                source: ContainerManagerError::ContainerRuntimeError { source },
+            })?;
         // create container
         let create_opts = RuntimeCreateOptions::new(
             container_bundle_dir.clone(),
             "container.pidfile".into(),
             container_id.clone(),
         );
-        match self.container_runtime.create_container(create_opts) {
-            Ok(()) => (),
-            Err(err) => {
-                return Err(ContainerManagerError::new(
-                    &container_id,
-                    format!("{:?}", err),
-                ))
-            }
-        }
+        self.container_runtime
+            .create_container(create_opts)
+            .map_err(|source| InternalCreateContainerError {
+                container_id: container_id.clone(),
+                source: ContainerManagerError::ContainerRuntimeError { source },
+            })?;
         // update container creation time, status, and persist to disk
-        self.update_container_created_at(&container_id, SystemTime::now())?;
-        self.update_container_status(&container_id, Status::Created)?;
-        match self.atomic_persist_container_state(&container_id) {
-            Ok(_) => Ok(container_id),
-            Err(err) => Err(err),
-        }
+        self.update_container_created_at(&container_id, SystemTime::now())
+            .map_err(|source| InternalCreateContainerError {
+                container_id: container_id.clone(),
+                source,
+            })?;
+        self.update_container_status(&container_id, Status::Created)
+            .map_err(|source| InternalCreateContainerError {
+                container_id: container_id.clone(),
+                source,
+            })?;
+        self.atomic_persist_container_state(&container_id)
+            .map_err(|source| InternalCreateContainerError {
+                container_id: container_id.clone(),
+                source,
+            })?;
+        Ok(container_id)
     }
 
     pub fn start_container(self: &Self, container_id: &ID) -> Result<(), ContainerManagerError> {
@@ -206,29 +263,19 @@ impl ContainerManager {
         match self.container_map.get(container_id) {
             Ok(container) => {
                 if container.status != Status::Created {
-                    return Err(ContainerManagerError::new(
-                        &container_id,
-                        format!("container does not have `Created` status"),
-                    ));
+                    return Err(
+                        ContainerManagerError::StartContainerNotInCreatedStateError {
+                            container_id: container_id.clone(),
+                        },
+                    );
                 }
             }
-            Err(err) => {
-                return Err(ContainerManagerError::new(
-                    container_id,
-                    format!("{:?}", err),
-                ))
-            }
+            Err(source) => return Err(ContainerManagerError::ContainerMapError { source }),
         }
         // container start
-        match self.container_runtime.start_container(container_id) {
-            Ok(_) => (),
-            Err(err) => {
-                return Err(ContainerManagerError::new(
-                    &container_id,
-                    format!("{:?}", err),
-                ))
-            }
-        }
+        self.container_runtime
+            .start_container(container_id)
+            .map_err(|source| ContainerManagerError::ContainerRuntimeError { source })?;
         // update container start time, status, and persist to disk
         //     this current approach just optimistically sets the container to
         //     running and allows future calls to get/list to synchronize with runc.
@@ -244,30 +291,18 @@ impl ContainerManager {
         match self.container_map.get(container_id) {
             Ok(container) => {
                 if container.status != Status::Running {
-                    return Err(ContainerManagerError::new(
-                        &container_id,
-                        format!("container does not have `Running` status"),
-                    ));
+                    return Err(ContainerManagerError::StopContainerNotInRunningStateError {
+                        container_id: container_id.clone(),
+                    });
                 }
             }
-            Err(err) => {
-                return Err(ContainerManagerError::new(
-                    container_id,
-                    format!("{:?}", err),
-                ))
-            }
+            Err(source) => return Err(ContainerManagerError::ContainerMapError { source }),
         }
         // need to run: runc kill container_id 9
         // container kill
-        match self.container_runtime.kill_container(container_id) {
-            Ok(_) => (),
-            Err(err) => {
-                return Err(ContainerManagerError::new(
-                    &container_id,
-                    format!("{:?}", err),
-                ))
-            }
-        }
+        self.container_runtime
+            .kill_container(container_id)
+            .map_err(|source| ContainerManagerError::ContainerRuntimeError { source })?;
         // update container status and persist to disk
         self.update_container_status(&container_id, Status::Stopped)?;
         self.atomic_persist_container_state(&container_id)
@@ -278,30 +313,19 @@ impl ContainerManager {
         match self.container_map.get(container_id) {
             Ok(container) => {
                 if container.status != Status::Stopped {
-                    return Err(ContainerManagerError::new(
-                        &container_id,
-                        format!("container does not have `Stopped` status, cannot delete"),
-                    ));
+                    return Err(
+                        ContainerManagerError::DeleteContainerNotInStoppedStateError {
+                            container_id: container_id.clone(),
+                        },
+                    );
                 }
             }
-            Err(err) => {
-                return Err(ContainerManagerError::new(
-                    container_id,
-                    format!("{:?}", err),
-                ))
-            }
+            Err(source) => return Err(ContainerManagerError::ContainerMapError { source }),
         }
         // container delete
-        match self.container_runtime.delete_container(container_id) {
-            Ok(_) => (),
-            Err(err) => {
-                // continue with best-effort deletion
-                error!(
-                    "container runtime deletion failed for container `{}`, err: `{:?}`. Continuing with best effort deletion.",
-                    container_id, err
-                );
-            }
-        };
+        self.container_runtime
+            .delete_container(container_id)
+            .map_err(|source| ContainerManagerError::ContainerRuntimeError { source })?;
         // remove container from memory and disk
         self.container_map.remove(&container_id);
         self.container_store.remove_container(&container_id);
@@ -313,15 +337,9 @@ impl ContainerManager {
         container_id: &ID,
     ) -> Result<Box<Container>, ContainerManagerError> {
         self.sync_container_status_with_runtime(container_id)?;
-        match self.container_map.get(container_id) {
-            Ok(container) => Ok(container),
-            Err(err) => {
-                return Err(ContainerManagerError::new(
-                    container_id,
-                    format!("{:?}", err),
-                ))
-            }
-        }
+        self.container_map
+            .get(container_id)
+            .map_err(|source| ContainerManagerError::ContainerMapError { source })
     }
 
     pub fn list_containers(self: &Self) -> Result<Vec<Container>, ContainerManagerError> {
@@ -331,37 +349,21 @@ impl ContainerManager {
                     self.sync_container_status_with_runtime(container.id())?;
                 }
             }
-            Err(err) => {
-                return Err(ContainerManagerError::new(
-                    &String::from("no specific container_id"),
-                    format!("{:?}", err),
-                ))
-            }
+            Err(source) => return Err(ContainerManagerError::ContainerMapError { source }),
         };
-        match self.container_map.list() {
-            Ok(containers) => Ok(containers),
-            Err(err) => {
-                return Err(ContainerManagerError::new(
-                    &String::from("no specific container_id"),
-                    format!("{:?}", err),
-                ))
-            }
-        }
+        self.container_map
+            .list()
+            .map_err(|source| ContainerManagerError::ContainerMapError { source })
     }
 
     fn sync_container_status_with_runtime(
         self: &Self,
         container_id: &ID,
     ) -> Result<(), ContainerManagerError> {
-        let status = match self.container_runtime.get_container_status(container_id) {
-            Ok(status) => status,
-            Err(err) => {
-                return Err(ContainerManagerError::new(
-                    container_id,
-                    format!("{:?}", err),
-                ))
-            }
-        };
+        let status = self
+            .container_runtime
+            .get_container_status(container_id)
+            .map_err(|source| ContainerManagerError::ContainerRuntimeError { source })?;
         // update container status and persist to disk
         self.update_container_status(&container_id, status)?;
         self.atomic_persist_container_state(&container_id)
@@ -373,15 +375,9 @@ impl ContainerManager {
         container_id: &ID,
         status: Status,
     ) -> Result<(), ContainerManagerError> {
-        match self.container_map.update_status(container_id, status) {
-            Ok(_) => Ok(()),
-            Err(err) => {
-                return Err(ContainerManagerError::new(
-                    &container_id,
-                    format!("{:?}", err),
-                ))
-            }
-        }
+        self.container_map
+            .update_status(container_id, status)
+            .map_err(|source| ContainerManagerError::ContainerMapError { source })
     }
 
     /// update_container_created_at updates container creation time in memory
@@ -390,18 +386,9 @@ impl ContainerManager {
         container_id: &ID,
         created_at: SystemTime,
     ) -> Result<(), ContainerManagerError> {
-        match self
-            .container_map
+        self.container_map
             .update_creation_time(container_id, created_at)
-        {
-            Ok(_) => Ok(()),
-            Err(err) => {
-                return Err(ContainerManagerError::new(
-                    &container_id,
-                    format!("{:?}", err),
-                ))
-            }
-        }
+            .map_err(|source| ContainerManagerError::ContainerMapError { source })
     }
 
     /// update_container_started_at updates container start time in memory
@@ -410,18 +397,9 @@ impl ContainerManager {
         container_id: &ID,
         started_at: SystemTime,
     ) -> Result<(), ContainerManagerError> {
-        match self
-            .container_map
+        self.container_map
             .update_start_time(container_id, started_at)
-        {
-            Ok(_) => Ok(()),
-            Err(err) => {
-                return Err(ContainerManagerError::new(
-                    &container_id,
-                    format!("{:?}", err),
-                ))
-            }
-        }
+            .map_err(|source| ContainerManagerError::ContainerMapError { source })
     }
 
     /// atomic_persist_container_state persists container state to disk
@@ -429,26 +407,12 @@ impl ContainerManager {
         self: &Self,
         container_id: &ID,
     ) -> Result<(), ContainerManagerError> {
-        let container = match self.container_map.get(&container_id) {
-            Ok(container) => container,
-            Err(err) => {
-                return Err(ContainerManagerError::new(
-                    &container_id,
-                    format!("{:?}", err),
-                ))
-            }
-        };
-        match self
-            .container_store
+        let container = self
+            .container_map
+            .get(&container_id)
+            .map_err(|source| ContainerManagerError::ContainerMapError { source })?;
+        self.container_store
             .atomic_persist_container_state(&container)
-        {
-            Ok(_) => Ok(()),
-            Err(err) => {
-                return Err(ContainerManagerError::new(
-                    &container_id,
-                    format!("{:?}", err),
-                ))
-            }
-        }
+            .map_err(|source| ContainerManagerError::ContainerStoreError { source })
     }
 }
