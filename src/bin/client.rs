@@ -23,7 +23,7 @@ const CONTAINER_ID: &str = "CONTAINER_ID";
 const CONTAINER_CMD: &str = "CONTAINER_CMD";
 const CONTAINER_ARGS: &str = "CONTAINER_ARGS";
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let matches = App::new("Cruise client")
         .version("0.0")
         .author("Will D. <wjdeuschle@gmail.com>")
@@ -144,27 +144,27 @@ fn main() {
                 container_cmd,
                 container_args,
                 container_rootfs_path,
-            )
-            .expect("create container failed");
+            )?;
         }
         if let Some(matches) = matches.subcommand_matches(CONTAINER_START) {
             let container_id = matches.value_of(CONTAINER_ID).unwrap();
-            client::start_container(port, container_id.into()).expect("start container failed");
+            client::start_container(port, container_id.into())?;
         }
         if let Some(matches) = matches.subcommand_matches(CONTAINER_STOP) {
             let container_id = matches.value_of(CONTAINER_ID).unwrap();
-            client::stop_container(port, container_id.into()).expect("stop container failed");
+            client::stop_container(port, container_id.into())?;
         }
         if let Some(matches) = matches.subcommand_matches(CONTAINER_GET) {
             let container_id = matches.value_of(CONTAINER_ID).unwrap();
-            client::get_container(port, container_id.into()).expect("get container failed");
+            client::get_container(port, container_id.into())?;
         }
         if let Some(_) = matches.subcommand_matches(CONTAINER_LIST) {
-            client::list_containers(port).expect("list containers failed");
+            client::list_containers(port)?;
         }
         if let Some(matches) = matches.subcommand_matches(CONTAINER_DELETE) {
             let container_id = matches.value_of(CONTAINER_ID).unwrap();
-            client::delete_container(port, container_id.into()).expect("delete container failed");
+            client::delete_container(port, container_id.into())?;
         }
     }
+    Ok(())
 }

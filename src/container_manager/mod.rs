@@ -40,6 +40,8 @@ pub enum ContainerManagerError {
     ReloadError { source: ContainerStoreError },
     // represents an error from the container store
     ContainerStoreError { source: ContainerStoreError },
+    // represents an error when a container is not found
+    ContainerNotFoundError { container_id: ID },
     // represents an error from the container map
     ContainerMapError { source: ContainerMapError },
     // represents an error from the container runtime
@@ -58,6 +60,9 @@ impl fmt::Display for ContainerManagerError {
             Self::CreateContainerStoreError { .. } => write!(f, "failed to create container store"),
             Self::ReloadError { .. } => write!(f, "failed to reload container manager"),
             Self::ContainerStoreError { ref source } => source.fmt(f),
+            Self::ContainerNotFoundError {
+                ref container_id, ..
+            } => write!(f, "container with container_id {} not found", container_id),
             Self::ContainerMapError { ref source } => source.fmt(f),
             Self::ContainerRuntimeError { ref source } => source.fmt(f),
             Self::StartContainerNotInCreatedStateError { ref container_id } => write!(
@@ -85,6 +90,7 @@ impl Error for ContainerManagerError {
             Self::CreateContainerStoreError { ref source } => Some(source),
             Self::ReloadError { ref source } => Some(source),
             Self::ContainerStoreError { ref source } => source.source(),
+            Self::ContainerNotFoundError { .. } => None,
             Self::ContainerMapError { ref source } => source.source(),
             Self::ContainerRuntimeError { ref source } => source.source(),
             Self::StartContainerNotInCreatedStateError { .. } => None,
@@ -94,13 +100,42 @@ impl Error for ContainerManagerError {
     }
 }
 
+impl From<ContainerMapError> for ContainerManagerError {
+    fn from(err: ContainerMapError) -> ContainerManagerError {
+        match err {
+            ContainerMapError::ContainerNotFoundError { container_id } => {
+                ContainerManagerError::ContainerNotFoundError { container_id }
+            }
+            _ => ContainerManagerError::ContainerMapError { source: err },
+        }
+    }
+}
+
+impl From<ContainerRuntimeError> for ContainerManagerError {
+    fn from(err: ContainerRuntimeError) -> ContainerManagerError {
+        match err {
+            ContainerRuntimeError::ContainerNotFoundError { container_id } => {
+                ContainerManagerError::ContainerNotFoundError { container_id }
+            }
+            _ => ContainerManagerError::ContainerRuntimeError { source: err },
+        }
+    }
+}
+
+impl From<ContainerStoreError> for ContainerManagerError {
+    fn from(err: ContainerStoreError) -> ContainerManagerError {
+        match err {
+            _ => ContainerManagerError::ContainerStoreError { source: err },
+        }
+    }
+}
+
 impl ContainerManager {
     pub fn new(
         root_dir: String,
         runtime_path: String,
     ) -> Result<ContainerManager, ContainerManagerError> {
-        let container_store = ContainerStore::new(root_dir)
-            .map_err(|source| ContainerManagerError::CreateContainerStoreError { source })?;
+        let container_store = ContainerStore::new(root_dir)?;
         let container_manager = ContainerManager {
             container_map: ContainerMap::new(),
             container_store,
@@ -199,33 +234,33 @@ impl ContainerManager {
         let container_id =
             self.container_map
                 .add(container)
-                .map_err(|source| InternalCreateContainerError {
+                .map_err(|err| InternalCreateContainerError {
                     container_id: container_id.clone(),
-                    source: ContainerManagerError::ContainerMapError { source },
+                    source: err.into(),
                 })?;
         // create container directory on disk
         self.container_store
             .create_container(&container_id)
-            .map_err(|source| InternalCreateContainerError {
+            .map_err(|err| InternalCreateContainerError {
                 container_id: container_id.clone(),
-                source: ContainerManagerError::ContainerStoreError { source },
+                source: err.into(),
             })?;
         // create container bundle on disk
         let container_bundle_dir = self
             .container_store
             .create_container_bundle(&container_id, &opts.rootfs_path)
-            .map_err(|source| InternalCreateContainerError {
+            .map_err(|err| InternalCreateContainerError {
                 container_id: container_id.clone(),
-                source: ContainerManagerError::ContainerStoreError { source },
+                source: err.into(),
             })?;
         // create container runtime spec on disk
         let spec_opts =
             RuntimeSpecOptions::new(container_bundle_dir.clone(), opts.command, opts.args);
         self.container_runtime
             .new_runtime_spec(&spec_opts)
-            .map_err(|source| InternalCreateContainerError {
+            .map_err(|err| InternalCreateContainerError {
                 container_id: container_id.clone(),
-                source: ContainerManagerError::ContainerRuntimeError { source },
+                source: err.into(),
             })?;
         // create container
         let create_opts = RuntimeCreateOptions::new(
@@ -235,9 +270,9 @@ impl ContainerManager {
         );
         self.container_runtime
             .create_container(create_opts)
-            .map_err(|source| InternalCreateContainerError {
+            .map_err(|err| InternalCreateContainerError {
                 container_id: container_id.clone(),
-                source: ContainerManagerError::ContainerRuntimeError { source },
+                source: err.into(),
             })?;
         // update container creation time, status, and persist to disk
         self.update_container_created_at(&container_id, SystemTime::now())
@@ -270,12 +305,10 @@ impl ContainerManager {
                     );
                 }
             }
-            Err(source) => return Err(ContainerManagerError::ContainerMapError { source }),
+            Err(err) => return Err(err.into()),
         }
         // container start
-        self.container_runtime
-            .start_container(container_id)
-            .map_err(|source| ContainerManagerError::ContainerRuntimeError { source })?;
+        self.container_runtime.start_container(container_id)?;
         // update container start time, status, and persist to disk
         //     this current approach just optimistically sets the container to
         //     running and allows future calls to get/list to synchronize with runc.
@@ -296,13 +329,11 @@ impl ContainerManager {
                     });
                 }
             }
-            Err(source) => return Err(ContainerManagerError::ContainerMapError { source }),
+            Err(err) => return Err(err.into()),
         }
         // need to run: runc kill container_id 9
         // container kill
-        self.container_runtime
-            .kill_container(container_id)
-            .map_err(|source| ContainerManagerError::ContainerRuntimeError { source })?;
+        self.container_runtime.kill_container(container_id)?;
         // update container status and persist to disk
         self.update_container_status(&container_id, Status::Stopped)?;
         self.atomic_persist_container_state(&container_id)
@@ -320,12 +351,10 @@ impl ContainerManager {
                     );
                 }
             }
-            Err(source) => return Err(ContainerManagerError::ContainerMapError { source }),
+            Err(err) => return Err(err.into()),
         }
         // container delete
-        self.container_runtime
-            .delete_container(container_id)
-            .map_err(|source| ContainerManagerError::ContainerRuntimeError { source })?;
+        self.container_runtime.delete_container(container_id)?;
         // remove container from memory and disk
         self.container_map.remove(&container_id);
         self.container_store.remove_container(&container_id);
@@ -339,7 +368,7 @@ impl ContainerManager {
         self.sync_container_status_with_runtime(container_id)?;
         self.container_map
             .get(container_id)
-            .map_err(|source| ContainerManagerError::ContainerMapError { source })
+            .map_err(|err| err.into())
     }
 
     pub fn list_containers(self: &Self) -> Result<Vec<Container>, ContainerManagerError> {
@@ -349,21 +378,16 @@ impl ContainerManager {
                     self.sync_container_status_with_runtime(container.id())?;
                 }
             }
-            Err(source) => return Err(ContainerManagerError::ContainerMapError { source }),
+            Err(err) => return Err(err.into()),
         };
-        self.container_map
-            .list()
-            .map_err(|source| ContainerManagerError::ContainerMapError { source })
+        self.container_map.list().map_err(|err| err.into())
     }
 
     fn sync_container_status_with_runtime(
         self: &Self,
         container_id: &ID,
     ) -> Result<(), ContainerManagerError> {
-        let status = self
-            .container_runtime
-            .get_container_status(container_id)
-            .map_err(|source| ContainerManagerError::ContainerRuntimeError { source })?;
+        let status = self.container_runtime.get_container_status(container_id)?;
         // update container status and persist to disk
         self.update_container_status(&container_id, status)?;
         self.atomic_persist_container_state(&container_id)
@@ -377,7 +401,7 @@ impl ContainerManager {
     ) -> Result<(), ContainerManagerError> {
         self.container_map
             .update_status(container_id, status)
-            .map_err(|source| ContainerManagerError::ContainerMapError { source })
+            .map_err(|err| err.into())
     }
 
     /// update_container_created_at updates container creation time in memory
@@ -388,7 +412,7 @@ impl ContainerManager {
     ) -> Result<(), ContainerManagerError> {
         self.container_map
             .update_creation_time(container_id, created_at)
-            .map_err(|source| ContainerManagerError::ContainerMapError { source })
+            .map_err(|err| err.into())
     }
 
     /// update_container_started_at updates container start time in memory
@@ -399,7 +423,7 @@ impl ContainerManager {
     ) -> Result<(), ContainerManagerError> {
         self.container_map
             .update_start_time(container_id, started_at)
-            .map_err(|source| ContainerManagerError::ContainerMapError { source })
+            .map_err(|err| err.into())
     }
 
     /// atomic_persist_container_state persists container state to disk
@@ -413,6 +437,6 @@ impl ContainerManager {
             .map_err(|source| ContainerManagerError::ContainerMapError { source })?;
         self.container_store
             .atomic_persist_container_state(&container)
-            .map_err(|source| ContainerManagerError::ContainerStoreError { source })
+            .map_err(|err| err.into())
     }
 }

@@ -1,10 +1,10 @@
 use chrono::offset::Utc;
 use chrono::DateTime;
-use log::debug;
+use log::{debug, error};
 use tonic::{transport::Server, Request, Response, Status};
 
 use crate::container::Container;
-use crate::container_manager::{ContainerManager, ContainerOptions};
+use crate::container_manager::{ContainerManager, ContainerManagerError, ContainerOptions};
 
 use cruise_grpc::cruise_server::{Cruise, CruiseServer};
 use cruise_grpc::{
@@ -41,6 +41,15 @@ pub fn new(cm: ContainerManager) -> CruiseDaemon {
     return CruiseDaemon { cm };
 }
 
+fn handle_container_manager_error(err: ContainerManagerError, failure_msg: &'static str) -> Status {
+    // TODO: match on error to return more specific information to client where possible
+    // for now, just pass along the container manager error
+    let status = Status::new(tonic::Code::Internal, format!("{}: {}", failure_msg, err));
+    // log error on server with error chain
+    error!("{:?}", anyhow::Error::new(err).context(failure_msg));
+    status
+}
+
 #[tonic::async_trait]
 impl Cruise for CruiseDaemon {
     async fn create_container(
@@ -59,7 +68,10 @@ impl Cruise for CruiseDaemon {
 
         match self.cm.create_container(container_opts) {
             Ok(container_id) => Ok(Response::new(CreateContainerResponse { container_id })),
-            Err(err) => Err(Status::new(tonic::Code::Internal, format!("{:?}", err))),
+            Err(err) => Err(handle_container_manager_error(
+                err,
+                "create container failed",
+            )),
         }
     }
 
@@ -73,7 +85,10 @@ impl Cruise for CruiseDaemon {
 
         match self.cm.start_container(&request.container_id) {
             Ok(_) => Ok(Response::new(StartContainerResponse { success: true })),
-            Err(err) => Err(Status::new(tonic::Code::Internal, format!("{:?}", err))),
+            Err(err) => Err(handle_container_manager_error(
+                err,
+                "start container failed",
+            )),
         }
     }
 
@@ -87,7 +102,7 @@ impl Cruise for CruiseDaemon {
 
         match self.cm.stop_container(&request.container_id) {
             Ok(_) => Ok(Response::new(StopContainerResponse { success: true })),
-            Err(err) => Err(Status::new(tonic::Code::Internal, format!("{:?}", err))),
+            Err(err) => Err(handle_container_manager_error(err, "stop container failed")),
         }
     }
 
@@ -101,7 +116,10 @@ impl Cruise for CruiseDaemon {
 
         match self.cm.delete_container(&request.container_id) {
             Ok(_) => Ok(Response::new(DeleteContainerResponse { success: true })),
-            Err(err) => Err(Status::new(tonic::Code::Internal, format!("{:?}", err))),
+            Err(err) => Err(handle_container_manager_error(
+                err,
+                "delete container failed",
+            )),
         }
     }
 
@@ -117,7 +135,7 @@ impl Cruise for CruiseDaemon {
             Ok(container) => Ok(Response::new(map_container_to_container_response(
                 *container,
             ))),
-            Err(err) => Err(Status::new(tonic::Code::Internal, format!("{:?}", err))),
+            Err(err) => Err(handle_container_manager_error(err, "get container failed")),
         }
     }
 
@@ -134,7 +152,10 @@ impl Cruise for CruiseDaemon {
                     .map(map_container_to_container_response)
                     .collect(),
             })),
-            Err(err) => Err(Status::new(tonic::Code::Internal, format!("{:?}", err))),
+            Err(err) => Err(handle_container_manager_error(
+                err,
+                "list containers failed",
+            )),
         }
     }
 }

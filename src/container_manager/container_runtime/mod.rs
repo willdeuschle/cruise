@@ -87,7 +87,7 @@ pub enum ContainerRuntimeError {
     // represents an error parsing the status of a container
     ParseContainerStatusError(serde_json::Error),
     // represents an error when the container is not found by the runtime
-    ContainerNotFound {
+    ContainerNotFoundError {
         container_id: ID,
     },
 }
@@ -115,7 +115,7 @@ impl fmt::Display for ContainerRuntimeError {
             }
             Self::ConvertContainerStatusError(ref err) => err.fmt(f),
             Self::ParseContainerStatusError(ref err) => err.fmt(f),
-            Self::ContainerNotFound { ref container_id } => {
+            Self::ContainerNotFoundError { ref container_id } => {
                 write!(f, "container with container_id {} not found", container_id)
             }
         }
@@ -129,7 +129,7 @@ impl Error for ContainerRuntimeError {
             Self::SedError { ref source, .. } => Some(source),
             Self::ConvertContainerStatusError(_) => None,
             Self::ParseContainerStatusError(_) => None,
-            Self::ContainerNotFound { .. } => None,
+            Self::ContainerNotFoundError { .. } => None,
         }
     }
 }
@@ -289,7 +289,7 @@ impl ContainerRuntime {
             .map_err(|source| ContainerRuntimeError::ConvertContainerStatusError(source))?;
         if runc_status_str == "" {
             // runc does not know about this container
-            return Err(ContainerRuntimeError::ContainerNotFound {
+            return Err(ContainerRuntimeError::ContainerNotFoundError {
                 container_id: container_id.clone(),
             });
         }
