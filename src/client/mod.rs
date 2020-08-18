@@ -32,6 +32,9 @@ pub async fn create_container(
 
     debug!("Got create container response: {:?}", response);
 
+    // print container id
+    println!("created: {}", response.into_inner().container_id);
+
     Ok(())
 }
 
@@ -42,11 +45,16 @@ pub async fn start_container(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut client = CruiseClient::connect(format!("http://[::1]:{}", port)).await?;
 
-    let request = tonic::Request::new(StartContainerRequest { container_id });
+    let request = tonic::Request::new(StartContainerRequest {
+        container_id: container_id.clone(),
+    });
 
     let response = client.start_container(request).await?;
 
     debug!("Got start container response: {:?}", response);
+
+    // print container id
+    println!("started: {}", &container_id);
 
     Ok(())
 }
@@ -58,11 +66,16 @@ pub async fn stop_container(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut client = CruiseClient::connect(format!("http://[::1]:{}", port)).await?;
 
-    let request = tonic::Request::new(StopContainerRequest { container_id });
+    let request = tonic::Request::new(StopContainerRequest {
+        container_id: container_id.clone(),
+    });
 
     let response = client.stop_container(request).await?;
 
     debug!("Got stop container response: {:?}", response);
+
+    // print container id
+    println!("stopped: {}", container_id);
 
     Ok(())
 }
@@ -104,11 +117,16 @@ pub async fn delete_container(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut client = CruiseClient::connect(format!("http://[::1]:{}", port)).await?;
 
-    let request = tonic::Request::new(DeleteContainerRequest { container_id });
+    let request = tonic::Request::new(DeleteContainerRequest {
+        container_id: container_id.clone(),
+    });
 
     let response = client.delete_container(request).await?;
 
     debug!("Got delete container response: {:?}", response);
+
+    // print container id
+    println!("deleted: {}", container_id);
 
     Ok(())
 }
