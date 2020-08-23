@@ -139,10 +139,8 @@ impl ContainerRuntime {
         ContainerRuntime { runtime_path }
     }
 
-    pub fn new_runtime_spec(
-        self: &Self,
-        opts: &RuntimeSpecOptions,
-    ) -> Result<(), ContainerRuntimeError> {
+    /// new_runtime_spec creates a new runtime spec file for a container
+    pub fn new_runtime_spec(&self, opts: &RuntimeSpecOptions) -> Result<(), ContainerRuntimeError> {
         // generate generic spec
         let mut runc = Command::new(&self.runtime_path);
         runc.arg(RuncMethod::Spec.to_string())
@@ -186,8 +184,9 @@ impl ContainerRuntime {
         Ok(())
     }
 
+    /// create_container creates a new container
     pub fn create_container(
-        self: &Self,
+        &self,
         opts: RuntimeCreateOptions,
     ) -> Result<(), ContainerRuntimeError> {
         // command to execute: runc create --bundle bundle --pid-file container_pidfile container_id
@@ -212,7 +211,8 @@ impl ContainerRuntime {
         Ok(())
     }
 
-    pub fn start_container(self: &Self, container_id: &ID) -> Result<(), ContainerRuntimeError> {
+    /// start_container starts a container
+    pub fn start_container(&self, container_id: &ID) -> Result<(), ContainerRuntimeError> {
         let mut runc_start = Command::new(&self.runtime_path);
         runc_start
             .arg(RuncMethod::Start.to_string())
@@ -230,7 +230,8 @@ impl ContainerRuntime {
         Ok(())
     }
 
-    pub fn kill_container(self: &Self, container_id: &ID) -> Result<(), ContainerRuntimeError> {
+    /// kill_container sends a SIGKILL to a container process
+    pub fn kill_container(&self, container_id: &ID) -> Result<(), ContainerRuntimeError> {
         let mut runc_kill = Command::new(&self.runtime_path);
         runc_kill
             .arg(RuncMethod::Kill.to_string())
@@ -249,7 +250,8 @@ impl ContainerRuntime {
         Ok(())
     }
 
-    pub fn delete_container(self: &Self, container_id: &ID) -> Result<(), ContainerRuntimeError> {
+    /// delete_container deletes internal container state
+    pub fn delete_container(&self, container_id: &ID) -> Result<(), ContainerRuntimeError> {
         let mut runc_delete = Command::new(&self.runtime_path);
         runc_delete
             .arg(RuncMethod::Delete.to_string())
@@ -267,10 +269,8 @@ impl ContainerRuntime {
         Ok(())
     }
 
-    pub fn get_container_status(
-        self: &Self,
-        container_id: &ID,
-    ) -> Result<Status, ContainerRuntimeError> {
+    /// get_container_status gets container state
+    pub fn get_container_status(&self, container_id: &ID) -> Result<Status, ContainerRuntimeError> {
         let mut runc_status_cmd = Command::new(&self.runtime_path);
         runc_status_cmd
             .arg(RuncMethod::State.to_string())

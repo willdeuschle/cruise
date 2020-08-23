@@ -20,7 +20,7 @@ pub struct Container {
 }
 
 impl Container {
-    pub fn id(self: &Self) -> &ID {
+    pub fn id(&self) -> &ID {
         &self.id
     }
 }

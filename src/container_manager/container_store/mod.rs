@@ -244,8 +244,8 @@ impl ContainerStore {
         Ok(cs)
     }
 
-    // create_container creates the container directory on disk and returns the directory
-    pub fn create_container(self: &Self, container_id: &ID) -> Result<(), ContainerStoreError> {
+    /// create_container_directory creates the container directory on disk and returns the directory
+    pub fn create_container_directory(&self, container_id: &ID) -> Result<(), ContainerStoreError> {
         let container_dir = self.specific_container_dir(container_id);
         if Path::new(&container_dir).exists() {
             return Err(ContainerStoreError::ContainerDirAlreadyExistsError {
@@ -260,14 +260,16 @@ impl ContainerStore {
         })
     }
 
-    pub fn remove_container(self: &Self, container_id: &ID) {
+    /// remove_container_directory deletes the container directory on disk
+    pub fn remove_container_directory(&self, container_id: &ID) {
         let container_dir = self.specific_container_dir(container_id);
         let _ = remove_dir_all(&container_dir);
     }
 
-    // pass in a spec and a root fs path, put those in the bundle dir
+    /// create_container_bundle copies the root filesystem of a container to
+    /// the container bundle directory
     pub fn create_container_bundle(
-        self: &Self,
+        &self,
         container_id: &ID,
         rootfs: &str,
     ) -> Result<String, ContainerStoreError> {
@@ -286,8 +288,9 @@ impl ContainerStore {
         Ok(self.bundle_dir(container_id))
     }
 
+    /// atomic_persist_container_state atomically stores a container's state
     pub fn atomic_persist_container_state(
-        self: &Self,
+        &self,
         container: &Container,
     ) -> Result<(), ContainerStoreError> {
         let serialized_container = serde_json::to_string(&container).map_err(|source| {
@@ -316,8 +319,9 @@ impl ContainerStore {
         Ok(())
     }
 
+    /// read_container_state reads a container's state off disk
     pub fn read_container_state(
-        self: &Self,
+        &self,
         container_id: &ID,
     ) -> Result<Container, ContainerStoreError> {
         let container_state_file = self.container_state_file(container_id);
@@ -335,7 +339,8 @@ impl ContainerStore {
         })
     }
 
-    pub fn list_container_ids(self: &Self) -> Result<Vec<ID>, ContainerStoreError> {
+    /// list_container_ids lists known container ids from state on disk
+    pub fn list_container_ids(&self) -> Result<Vec<ID>, ContainerStoreError> {
         let mut container_ids = vec![];
         let container_dirs = read_dir(self.containers_dir())
             .map_err(|source| ContainerStoreError::ReadContainersDirError { source })?;
@@ -351,30 +356,30 @@ impl ContainerStore {
         Ok(container_ids)
     }
 
-    fn container_state_file(self: &Self, container_id: &ID) -> String {
+    fn container_state_file(&self, container_id: &ID) -> String {
         format!(
             "{}/container.state",
             self.specific_container_dir(container_id)
         )
     }
 
-    fn temp_container_state_file(self: &Self, container_id: &ID) -> String {
+    fn temp_container_state_file(&self, container_id: &ID) -> String {
         format!("{}.temp", self.container_state_file(container_id))
     }
 
-    fn specific_container_dir(self: &Self, container_id: &ID) -> String {
+    fn specific_container_dir(&self, container_id: &ID) -> String {
         format!("{}/{}", self.containers_dir(), container_id)
     }
 
-    fn containers_dir(self: &Self) -> String {
+    fn containers_dir(&self) -> String {
         format!("{}/containers", self.root_dir)
     }
 
-    fn bundle_dir(self: &Self, container_id: &ID) -> String {
+    fn bundle_dir(&self, container_id: &ID) -> String {
         format!("{}/bundle", self.specific_container_dir(container_id))
     }
 
-    fn rootfs_dir(self: &Self, container_id: &ID) -> String {
+    fn rootfs_dir(&self, container_id: &ID) -> String {
         format!("{}/rootfs", self.bundle_dir(container_id))
     }
 }

@@ -41,7 +41,7 @@ pub struct ContainerMap {
 }
 
 impl fmt::Debug for ContainerMap {
-    fn fmt(self: &Self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "ContainerMap")
     }
 }
@@ -54,7 +54,8 @@ impl ContainerMap {
         }
     }
 
-    pub fn add(self: &Self, container: Container) -> Result<ID, ContainerMapError> {
+    /// add adds a container to the map
+    pub fn add(&self, container: Container) -> Result<ID, ContainerMapError> {
         let mut map = self.map.lock().unwrap();
         if map.contains_key(container.id()) {
             return Err(ContainerMapError::ContainerAlreadyExistsError {
@@ -66,8 +67,36 @@ impl ContainerMap {
         Ok(container_id)
     }
 
+    /// get gets a container from the map
+    pub fn get(&self, container_id: &ID) -> Result<Box<Container>, ContainerMapError> {
+        let map = self.map.lock().unwrap();
+        if !map.contains_key(container_id) {
+            return Err(ContainerMapError::ContainerNotFoundError {
+                container_id: container_id.clone(),
+            });
+        }
+        let container_clone = map.get(container_id).unwrap().clone();
+        Ok(Box::new(container_clone))
+    }
+
+    /// list lists containers in the map
+    pub fn list(&self) -> Result<Vec<Container>, ContainerMapError> {
+        let map = self.map.lock().unwrap();
+        Ok(map.values().map(|c| c.clone()).collect())
+    }
+
+    /// remove removes a container from the map
+    pub fn remove(&self, container_id: &ID) {
+        let mut map = self.map.lock().unwrap();
+        if !map.contains_key(container_id) {
+            return;
+        }
+        map.remove(container_id);
+    }
+
+    /// update_status updates the status of a container
     pub fn update_status(
-        self: &Self,
+        &self,
         container_id: &ID,
         status: Status,
     ) -> Result<(), ContainerMapError> {
@@ -82,8 +111,9 @@ impl ContainerMap {
         Ok(())
     }
 
+    /// update_creation_time updates the creation time of a container
     pub fn update_creation_time(
-        self: &Self,
+        &self,
         container_id: &ID,
         created_at: SystemTime,
     ) -> Result<(), ContainerMapError> {
@@ -98,8 +128,9 @@ impl ContainerMap {
         Ok(())
     }
 
+    // update_start_time updates the start time of a container
     pub fn update_start_time(
-        self: &Self,
+        &self,
         container_id: &ID,
         started_at: SystemTime,
     ) -> Result<(), ContainerMapError> {
@@ -112,29 +143,5 @@ impl ContainerMap {
         let container = map.get_mut(container_id).unwrap();
         container.started_at = Some(started_at);
         Ok(())
-    }
-
-    pub fn get(self: &Self, container_id: &ID) -> Result<Box<Container>, ContainerMapError> {
-        let map = self.map.lock().unwrap();
-        if !map.contains_key(container_id) {
-            return Err(ContainerMapError::ContainerNotFoundError {
-                container_id: container_id.clone(),
-            });
-        }
-        let container_clone = map.get(container_id).unwrap().clone();
-        Ok(Box::new(container_clone))
-    }
-
-    pub fn list(self: &Self) -> Result<Vec<Container>, ContainerMapError> {
-        let map = self.map.lock().unwrap();
-        Ok(map.values().map(|c| c.clone()).collect())
-    }
-
-    pub fn remove(self: &Self, container_id: &ID) {
-        let mut map = self.map.lock().unwrap();
-        if !map.contains_key(container_id) {
-            return;
-        }
-        map.remove(container_id);
     }
 }

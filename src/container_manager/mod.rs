@@ -130,6 +130,8 @@ impl From<ContainerStoreError> for ContainerManagerError {
     }
 }
 
+// TODO: add locking per container_id to ensure operations between container_map and
+// container_store are consistent
 impl ContainerManager {
     pub fn new(
         root_dir: String,
@@ -151,7 +153,7 @@ impl ContainerManager {
     ///       container is corrupted and remove it
     /// - adds the container to the in-memory store
     /// - syncs the container state with the container runtime
-    fn reload(self: &Self) -> Result<(), ContainerManagerError> {
+    fn reload(&self) -> Result<(), ContainerManagerError> {
         // get container ids off disk
         let container_ids = self
             .container_store
@@ -166,7 +168,8 @@ impl ContainerManager {
                         "unable to parse state of container `{}`, err: `{}`. Removing container.",
                         container_id, err
                     );
-                    self.container_store.remove_container(&container_id);
+                    self.container_store
+                        .remove_container_directory(&container_id);
                     continue;
                 }
             };
@@ -189,7 +192,8 @@ impl ContainerManager {
                         "unable to sync state of container `{}`, err: `{:?}`. Removing container.",
                         container_id, err
                     );
-                    self.container_store.remove_container(&container_id);
+                    self.container_store
+                        .remove_container_directory(&container_id);
                     continue;
                 }
             }
@@ -197,9 +201,10 @@ impl ContainerManager {
         Ok(())
     }
 
-    fn rollback_container_create(self: &Self, container_id: &ID) {
+    fn rollback_container_create(&self, container_id: &ID) {
         self.container_map.remove(&container_id);
-        self.container_store.remove_container(&container_id)
+        self.container_store
+            .remove_container_directory(&container_id)
     }
 
     /// create_container does the following:
@@ -207,7 +212,7 @@ impl ContainerManager {
     /// - on an error, invoke rollback_container_create to clean up leftover
     ///   state, including in-memory container and container directory on disk
     pub fn create_container(
-        self: &Self,
+        &self,
         opts: ContainerOptions,
     ) -> Result<String, ContainerManagerError> {
         self.create_container_helper(opts).or_else(|err| {
@@ -227,7 +232,7 @@ impl ContainerManager {
     /// - create the container (runc exec)
     /// - update container status, write those to disk
     fn create_container_helper(
-        self: &Self,
+        &self,
         opts: ContainerOptions,
     ) -> Result<String, InternalCreateContainerError> {
         // generate container id
@@ -244,7 +249,7 @@ impl ContainerManager {
                 })?;
         // create container directory on disk
         self.container_store
-            .create_container(&container_id)
+            .create_container_directory(&container_id)
             .map_err(|err| InternalCreateContainerError {
                 container_id: container_id.clone(),
                 source: err.into(),
@@ -301,7 +306,7 @@ impl ContainerManager {
     /// - ensure container exists and is in created state
     /// - start the container via the container runtime
     /// - update container start time and status, then persist
-    pub fn start_container(self: &Self, container_id: &ID) -> Result<(), ContainerManagerError> {
+    pub fn start_container(&self, container_id: &ID) -> Result<(), ContainerManagerError> {
         // ensure container exists and is in created state
         match self.container_map.get(container_id) {
             Ok(container) => {
@@ -331,7 +336,7 @@ impl ContainerManager {
     /// - ensure container exists and is in running state
     /// - send a SIGKILL to the container via the container runtime
     /// - update container status, then persist
-    pub fn stop_container(self: &Self, container_id: &ID) -> Result<(), ContainerManagerError> {
+    pub fn stop_container(&self, container_id: &ID) -> Result<(), ContainerManagerError> {
         // ensure container exists and is in running state
         match self.container_map.get(container_id) {
             Ok(container) => {
@@ -354,7 +359,7 @@ impl ContainerManager {
     /// - ensure container exists and is in stopped state
     /// - tell the container runtime to delete the container
     /// - remove remnants of container in memory and on disk
-    pub fn delete_container(self: &Self, container_id: &ID) -> Result<(), ContainerManagerError> {
+    pub fn delete_container(&self, container_id: &ID) -> Result<(), ContainerManagerError> {
         // ensure container exists and is in stopped state
         match self.container_map.get(container_id) {
             Ok(container) => {
@@ -372,7 +377,8 @@ impl ContainerManager {
         self.container_runtime.delete_container(container_id)?;
         // remove container from memory and disk
         self.container_map.remove(&container_id);
-        self.container_store.remove_container(&container_id);
+        self.container_store
+            .remove_container_directory(&container_id);
         Ok(())
     }
 
@@ -381,7 +387,7 @@ impl ContainerManager {
     ///   if the container does not exist
     /// - return container state from memory
     pub fn get_container(
-        self: &Self,
+        &self,
         container_id: &ID,
     ) -> Result<Box<Container>, ContainerManagerError> {
         self.sync_container_status_with_runtime(container_id)?;
@@ -394,7 +400,7 @@ impl ContainerManager {
     /// - for every known container, synchronize container state with the
     ///   container runtime, which fails if any of the containers do not exist
     /// - return container states from memory
-    pub fn list_containers(self: &Self) -> Result<Vec<Container>, ContainerManagerError> {
+    pub fn list_containers(&self) -> Result<Vec<Container>, ContainerManagerError> {
         match self.container_map.list() {
             Ok(containers) => {
                 for container in containers.iter() {
@@ -410,7 +416,7 @@ impl ContainerManager {
     /// - get container state from the container runtime
     /// - persist in memory and to disk
     fn sync_container_status_with_runtime(
-        self: &Self,
+        &self,
         container_id: &ID,
     ) -> Result<(), ContainerManagerError> {
         let status = self.container_runtime.get_container_status(container_id)?;
@@ -421,7 +427,7 @@ impl ContainerManager {
 
     /// update_container_status updates container status in memory
     fn update_container_status(
-        self: &Self,
+        &self,
         container_id: &ID,
         status: Status,
     ) -> Result<(), ContainerManagerError> {
@@ -432,7 +438,7 @@ impl ContainerManager {
 
     /// update_container_created_at updates container creation time in memory
     fn update_container_created_at(
-        self: &Self,
+        &self,
         container_id: &ID,
         created_at: SystemTime,
     ) -> Result<(), ContainerManagerError> {
@@ -443,7 +449,7 @@ impl ContainerManager {
 
     /// update_container_started_at updates container start time in memory
     fn update_container_started_at(
-        self: &Self,
+        &self,
         container_id: &ID,
         started_at: SystemTime,
     ) -> Result<(), ContainerManagerError> {
@@ -454,7 +460,7 @@ impl ContainerManager {
 
     /// atomic_persist_container_state persists container state to disk
     fn atomic_persist_container_state(
-        self: &Self,
+        &self,
         container_id: &ID,
     ) -> Result<(), ContainerManagerError> {
         let container = self
