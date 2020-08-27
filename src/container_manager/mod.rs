@@ -50,8 +50,9 @@ pub enum ContainerManagerError {
     StartContainerNotInCreatedStateError { container_id: ID },
     // represents an error trying to stop a container that's not in a running state
     StopContainerNotInRunningStateError { container_id: ID },
-    // represents an error trying to delete a container that's not in a stopped state
-    DeleteContainerNotInStoppedStateError { container_id: ID },
+    // represents an error trying to delete a container that's not in a deleteable (created or
+    // stopped) state
+    DeleteContainerNotInDeleteableStateError { container_id: ID },
 }
 
 impl fmt::Display for ContainerManagerError {
@@ -75,9 +76,9 @@ impl fmt::Display for ContainerManagerError {
                 "container with container_id {} is not in a running state",
                 container_id
             ),
-            Self::DeleteContainerNotInStoppedStateError { ref container_id } => write!(
+            Self::DeleteContainerNotInDeleteableStateError { ref container_id } => write!(
                 f,
-                "container with container_id {} is not in a stopped state",
+                "container with container_id {} is not in a deleteable (created or stopped) state",
                 container_id
             ),
         }
@@ -95,7 +96,7 @@ impl Error for ContainerManagerError {
             Self::ContainerRuntimeError { ref source } => source.source(),
             Self::StartContainerNotInCreatedStateError { .. } => None,
             Self::StopContainerNotInRunningStateError { .. } => None,
-            Self::DeleteContainerNotInStoppedStateError { .. } => None,
+            Self::DeleteContainerNotInDeleteableStateError { .. } => None,
         }
     }
 }
@@ -194,6 +195,7 @@ impl ContainerManager {
                     );
                     self.container_store
                         .remove_container_directory(&container_id);
+                    self.container_map.remove(&container_id);
                     continue;
                 }
             }
@@ -363,9 +365,9 @@ impl ContainerManager {
         // ensure container exists and is in stopped state
         match self.container_map.get(container_id) {
             Ok(container) => {
-                if container.status != Status::Stopped {
+                if container.status != Status::Stopped && container.status != Status::Created {
                     return Err(
-                        ContainerManagerError::DeleteContainerNotInStoppedStateError {
+                        ContainerManagerError::DeleteContainerNotInDeleteableStateError {
                             container_id: container_id.clone(),
                         },
                     );

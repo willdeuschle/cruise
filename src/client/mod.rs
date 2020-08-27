@@ -203,7 +203,7 @@ fn print_containers(containers: Vec<GetContainerResponse>) {
             container.started_at,
             container.finished_at,
             container.command,
-            container.args.join(","),
+            container.args.join(", "),
             id = id_len,
             name = name_len,
             status = status_len,

@@ -144,6 +144,7 @@ impl ContainerRuntime {
         // generate generic spec
         let mut runc = Command::new(&self.runtime_path);
         runc.arg(RuncMethod::Spec.to_string())
+            .arg("--rootless")
             .arg("--bundle")
             .arg(&opts.bundle_path);
         runc.output()
