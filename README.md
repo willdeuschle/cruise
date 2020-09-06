@@ -1,6 +1,8 @@
 # cruise
 rusty container manager
 
+See the write-up about the project [here](https://willdeuschle.com/container-manager-in-rust).
+
 ## Running it
 This project uses runc so it needs to be run on a Linux machine, which I do in a Vagrant box. If you need to, install [Vagrant](https://www.vagrantup.com/). My simple configuration is a `Vagrantfile` with the following contents:
 ```
